@@ -51,9 +51,11 @@ export const PDVView: React.FC<PDVViewProps> = ({
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   // Auto-focus search input on load
-  useEffect(() => {
-    searchInputRef.current?.focus();
-  }, []);
+useEffect(() => {
+  if (!currentUser) return; 
+
+  refreshAllData();
+}, [currentUser, refreshAllData]);
 
   // Filter products for left grid selection
   const filteredProducts = useMemo(() => {
