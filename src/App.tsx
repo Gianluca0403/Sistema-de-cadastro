@@ -59,16 +59,24 @@ const App: React.FC = () => {
 }, []);
 
   // Monitor Auth Changes
+ useEffect(() => {
+  const unsubscribe = dbService.auth.onAuthStateChange(async (user) => {
+    if (user && user.email) {
+      setUserEmail(user.email);
+      // ❌ Remova o await refreshAllData() daqui
+    } else {
+      setUserEmail(null);
+    }
+    setIsInitializing(false);
+  });
+
   useEffect(() => {
-    const unsubscribe = dbService.auth.onAuthStateChange(async (user) => {
-      if (user && user.email) {
-        setUserEmail(user.email);
-        await refreshAllData();
-      } else {
-        setUserEmail(null);
-      }
-      setIsInitializing(false);
-    });
+  if (!userEmail) return;
+  refreshAllData();
+}, [userEmail, refreshAllData]);
+
+  return () => unsubscribe?.();
+}, []);
 
     return () => unsubscribe();
   }, [refreshAllData]);
