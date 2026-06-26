@@ -30,18 +30,23 @@ const App: React.FC = () => {
   // --- REFRESH DATA FUNCTION ---
   const refreshAllData = useCallback(async () => {
     try {
-      console.log("Estrutura do dbService carregada:", dbService);
-      const [prods, clis, transactions, logs] = await Promise.all([
-        dbService.products.getAll(),
-        dbService.customers.getAll(),
-        dbService.sales.getAll(),
-        dbService.movements.getAll()
-      ]);
+   // 1. Validando um por um para isolar qual está quebrado
+    if (!dbService.products) console.error("ERRO: dbService.products está undefined!");
+    if (!dbService.customers) console.error("ERRO: dbService.customers está undefined!");
+    if (!dbService.sales) console.error("ERRO: dbService.sales está undefined!");
+    if (!dbService.movements) console.error("ERRO: dbService.movements está undefined!");
 
-      setProducts(prods);
-      setClients(clis);
-      setSales(transactions);
-      setMovements(logs);
+    // 2. Execução segura individual para não travar o Promise.all
+    const prods = dbService.products ? await dbService.products.getAll() : [];
+    const clis = dbService.customers ? await dbService.customers.getAll() : [];
+    const transactions = dbService.sales ? await dbService.sales.getAll() : [];
+    const logs = dbService.movements ? await dbService.movements.getAll() : [];
+
+    // Substitua os setters abaixo pelos que já existem no seu código original
+    setProducts(prods);
+    setCustomers(clis);
+    setSales(transactions);
+    setMovements(logs);
     } catch (error) {
       console.error('Error fetching system data:', error);
     }
