@@ -32,7 +32,7 @@ const App: React.FC = () => {
     try {
       const [prods, clis, transactions, logs] = await Promise.all([
         dbService.products.getAll(),
-        dbService.clients.getAll(),
+        dbService.customers.getAll(),
         dbService.sales.getAll(),
         dbService.movements.getAll()
       ]);
