@@ -30,6 +30,7 @@ const App: React.FC = () => {
   // --- REFRESH DATA FUNCTION ---
   const refreshAllData = useCallback(async () => {
     try {
+      console.log("Estrutura do dbService carregada:", dbService);
       const [prods, clis, transactions, logs] = await Promise.all([
         dbService.products.getAll(),
         dbService.customers.getAll(),
