@@ -71,7 +71,7 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
     setEditingProduct(null);
     setFormName('');
     setFormBarcode('');
-    setFormCategoryId('cat-1');
+    setFormCategoryId('dca569b3-1fb3-4244-a117-9d69cc2915a9');
     setFormStock(0);
     setFormMinStock(2);
     setFormCostPrice(0);
@@ -87,7 +87,7 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
     setEditingProduct(product);
     setFormName(product.name);
     setFormBarcode(product.barcode || '');
-    setFormCategoryId(product.category_id || 'cat-1');
+    setFormCategoryId(product.category_id || 'dca569b3-1fb3-4244-a117-9d69cc2915a9');
     setFormStock(product.stock);
     setFormMinStock(product.min_stock);
     setFormCostPrice(product.cost_price);
