@@ -20,7 +20,7 @@ const App: React.FC = () => {
 
   // Core Data Lists
   const [products, setProducts] = useState<Product[]>([]);
-  const [clients, setClients] = useState<Client[]>([]);
+  const [clients, setClients] = useState<Customer[]>([]);
   const [sales, setSales] = useState<Sale[]>([]);
   const [movements, setMovements] = useState<StockMovement[]>([]);
 
@@ -29,66 +29,53 @@ const App: React.FC = () => {
 
   // --- REFRESH DATA FUNCTION ---
   const refreshAllData = useCallback(async () => {
-  try {
-    // Guarda defensiva: verifica se dbService existe e tem os métodos esperados
-    if (
-      !dbService ||
-      typeof dbService.products?.getAll !== 'function' ||
-      typeof dbService.customers?.getAll !== 'function' ||
-      typeof dbService.sales?.getAll !== 'function' ||
-      typeof dbService.movements?.getAll !== 'function'
-    ) {
-      console.error('dbService não está pronto ainda.');
-      return;
+    try {
+      if (
+        !dbService ||
+        typeof dbService.products?.getAll !== 'function' ||
+        typeof dbService.customers?.getAll !== 'function' ||
+        typeof dbService.sales?.getAll !== 'function' ||
+        typeof dbService.movements?.getAll !== 'function'
+      ) {
+        console.error('dbService não está pronto ainda.');
+        return;
+      }
+
+      const [prods, clis, transactions, logs] = await Promise.all([
+        dbService.products.getAll(),
+        dbService.customers.getAll(),
+        dbService.sales.getAll(),
+        dbService.movements.getAll(),
+      ]);
+
+      setProducts(prods);
+      setClients(clis);
+      setSales(transactions);
+      setMovements(logs);
+    } catch (error) {
+      console.error('Error fetching system data:', error);
     }
+  }, []);
 
-    const [prods, clis, transactions, logs] = await Promise.all([
-      dbService.products.getAll(),
-      dbService.customers.getAll(),
-      dbService.sales.getAll(),
-      dbService.movements.getAll(),
-    ]);
+  // 1. Monitor Auth Changes
+  useEffect(() => {
+    const unsubscribe = dbService.auth.onAuthStateChange(async (user) => {
+      if (user && user.email) {
+        setUserEmail(user.email);
+      } else {
+        setUserEmail(null);
+      }
+      setIsInitializing(false);
+    });
 
-    setProducts(prods);
-    setCustomers(clis);
-    setSales(transactions);
-    setMovements(logs);
-  } catch (error) {
-    console.error('Error fetching system data:', error);
-  }
-}, []);
+    return () => unsubscribe?.();
+  }, []);
 
-  // Monitor Auth Changes
- useEffect(() => {
-  const unsubscribe = dbService.auth.onAuthStateChange(async (user) => {
-    if (user && user.email) {
-      setUserEmail(user.email);
-      // ❌ Remova o await refreshAllData() daqui
-    } else {
-      setUserEmail(null);
-    }
-    setIsInitializing(false);
-  });
-
-// 1. Monitor Auth Changes
-useEffect(() => {
-  const unsubscribe = dbService.auth.onAuthStateChange(async (user) => {
-    if (user && user.email) {
-      setUserEmail(user.email);
-    } else {
-      setUserEmail(null);
-    }
-    setIsInitializing(false);
-  });
-
-  return () => unsubscribe?.();
-}, []);
-
-// 2. Carrega dados quando usuário estiver pronto
-useEffect(() => {
-  if (!userEmail) return;
-  refreshAllData();
-}, [userEmail, refreshAllData]);
+  // 2. Carrega dados quando usuário estiver pronto
+  useEffect(() => {
+    if (!userEmail) return;
+    refreshAllData();
+  }, [userEmail, refreshAllData]);
 
   // Handle Login Event
   const handleLoginSuccess = (email: string) => {
@@ -137,42 +124,32 @@ useEffect(() => {
   // ==========================================================================
   // CLIENT CALLBACKS
   // ==========================================================================
-  const handleCreateClient = async (clientData: Omit<Client, 'id' | 'created_at'>) => {
-    await dbService.clients.create(clientData);
+  const handleCreateClient = async (clientData: Omit<Customer, 'id' | 'created_at'>) => {
+    await dbService.customers.create(clientData);
     await refreshAllData();
   };
 
-  const handleUpdateClient = async (id: string, clientData: Partial<Client>) => {
-    await dbService.clients.update(id, clientData);
+  const handleUpdateClient = async (id: string, clientData: Partial<Customer>) => {
+    await dbService.customers.update(id, clientData);
     await refreshAllData();
   };
 
   const handleDeleteClient = async (id: string) => {
-    await dbService.clients.delete(id);
+    await dbService.customers.delete(id);
     await refreshAllData();
   };
 
-  // Paying outstanding client debt (Crediário)
-  const handlePayDebt = async (client: Client, amount: number, paymentMethod: string, obs: string) => {
-    // 1. Reduce outstanding debt
-    await dbService.clients.adjustDebt(client.id, -amount);
+  const handlePayDebt = async (client: Customer, amount: number, paymentMethod: string, obs: string) => {
+    await dbService.customers.adjustDebt(client.id, -amount);
 
-    // 2. Register virtual sale representing inflow of cash settling crediário
-    // This allows dashboard figures to correctly capture payment as income
     await dbService.sales.create({
       total_price: amount,
       discount: 0,
       payment_method: paymentMethod as any,
-      client_id: client.id,
+      customer_id: client.id,
       user_email: userEmail || 'sistema@jaja.com'
-    }, []); // Empty items list (since it's a debt payment, no inventory is removed)
+    }, []);
 
-    // 3. Log a custom stock movement with quantity 0 to record audit trail in stock movements
-    // product_id could be dummy or first product if database requires, but in our SQL schema we can have movements
-    // linked to products. To avoid SQL constraint failures since movements requires product_id,
-    // we can record this payment as a pure sale transaction (which is already logged in sales logs).
-    // Let's write the Audit text directly into sales notes.
-    
     await refreshAllData();
   };
 
@@ -184,7 +161,7 @@ useEffect(() => {
       total_price: number;
       discount: number;
       payment_method: 'PIX' | 'Cartão' | 'Dinheiro' | 'Crediário';
-      client_id: string | null;
+      customer_id: string | null;
     },
     items: Array<{
       product_id: string;
@@ -210,7 +187,7 @@ useEffect(() => {
   };
 
   // ==========================================================================
-  // DATA MANAGEMENT FUNCTIONS (LOCAL STORAGE BACKUPS)
+  // DATA MANAGEMENT FUNCTIONS
   // ==========================================================================
   const handleClearAllData = () => {
     dbService.clearAllData();
@@ -262,17 +239,15 @@ useEffect(() => {
 
   return (
     <div id="app-layout">
-      {/* Sidebar Navigation */}
-      <Sidebar 
-        currentView={currentView} 
-        onViewChange={setCurrentView} 
+      <Sidebar
+        currentView={currentView}
+        onViewChange={setCurrentView}
         dbType={dbType}
       />
 
-      {/* Main Panel Content */}
       <main id="main-content">
-        <Header 
-          currentView={currentView} 
+        <Header
+          currentView={currentView}
           userEmail={userEmail}
           onLogout={handleLogout}
           onQuickSale={handleQuickSaleTrigger}
@@ -280,7 +255,7 @@ useEffect(() => {
 
         <div className="content-body" id="view-container">
           {currentView === 'dashboard' && (
-            <DashboardView 
+            <DashboardView
               products={products}
               sales={sales}
               clients={clients}
@@ -290,7 +265,7 @@ useEffect(() => {
           )}
 
           {currentView === 'estoque' && (
-            <ProductsView 
+            <ProductsView
               products={products}
               onCreateProduct={handleCreateProduct}
               onUpdateProduct={handleUpdateProduct}
@@ -301,7 +276,7 @@ useEffect(() => {
           )}
 
           {currentView === 'pdv' && (
-            <PDVView 
+            <PDVView
               products={products}
               clients={clients}
               onSubmitSale={handleSubmitSale}
@@ -310,7 +285,7 @@ useEffect(() => {
           )}
 
           {currentView === 'clientes' && (
-            <ClientsView 
+            <ClientsView
               clients={clients}
               onCreateClient={handleCreateClient}
               onUpdateClient={handleUpdateClient}
@@ -320,7 +295,7 @@ useEffect(() => {
           )}
 
           {currentView === 'movimentacoes' && (
-            <MovementsView 
+            <MovementsView
               movements={movements}
               sales={sales}
               onGetSaleItems={handleGetSaleItems}
@@ -329,7 +304,7 @@ useEffect(() => {
           )}
 
           {currentView === 'configuracoes' && (
-            <SettingsView 
+            <SettingsView
               dbType={dbType}
               onClearAllData={handleClearAllData}
               onImportBackup={handleImportBackup}
@@ -339,9 +314,7 @@ useEffect(() => {
         </div>
       </main>
     </div>
-    
   );
-})
-}
+};
 
-export default App 
+export default App;
