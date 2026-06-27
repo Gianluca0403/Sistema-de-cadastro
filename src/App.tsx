@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { dbService, isSupabaseConfigured } from './supabaseClient';
-import { Product, Client, Sale, StockMovement, SaleItem } from './types';
+import { Product, Customer, Sale, StockMovement, SaleItem } from './types';
 
 // Import Components
 import { Sidebar } from './components/Sidebar';
