@@ -70,16 +70,25 @@ const App: React.FC = () => {
     setIsInitializing(false);
   });
 
-  useEffect(() => {
-  if (!userEmail) return;
-  refreshAllData();
-}, [userEmail, refreshAllData]);
+// 1. Monitor Auth Changes
+useEffect(() => {
+  const unsubscribe = dbService.auth.onAuthStateChange(async (user) => {
+    if (user && user.email) {
+      setUserEmail(user.email);
+    } else {
+      setUserEmail(null);
+    }
+    setIsInitializing(false);
+  });
 
   return () => unsubscribe?.();
 }, []);
 
-    return () => unsubscribe();
-  }, [refreshAllData]);
+// 2. Carrega dados quando usuário estiver pronto
+useEffect(() => {
+  if (!userEmail) return;
+  refreshAllData();
+}, [userEmail, refreshAllData]);
 
   // Handle Login Event
   const handleLoginSuccess = (email: string) => {
