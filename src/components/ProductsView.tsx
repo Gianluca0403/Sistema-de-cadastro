@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef } from 'react';
-import { Product } from '../types';
+import { Product, Category } from '../types';
 import { DEFAULT_CATEGORY_IMAGES } from '../supabaseClient';
 
 interface ProductsViewProps {
@@ -11,6 +11,14 @@ interface ProductsViewProps {
   userEmail: string;
 }
 
+const CATEGORY_OPTIONS = [
+  { id: 'cat-1', name: 'Perfumes' },
+  { id: 'cat-2', name: 'Hidratantes' },
+  { id: 'cat-3', name: 'Body Splash' },
+  { id: 'cat-4', name: 'Kits' },
+  { id: 'cat-5', name: 'Outros' },
+];
+
 export const ProductsView: React.FC<ProductsViewProps> = ({
   products,
   onCreateProduct,
@@ -19,11 +27,9 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
   onAddStockMovement,
   userEmail
 }) => {
-  // Navigation & filter states
   const [search, setSearch] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('');
 
-  // Modals state
   const [isProductModalOpen, setIsProductModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
 
@@ -33,10 +39,9 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
   const [movementQty, setMovementQty] = useState<number>(0);
   const [movementObs, setMovementObs] = useState('');
 
-  // Form states for Product CRUD
   const [formName, setFormName] = useState('');
   const [formBarcode, setFormBarcode] = useState('');
-  const [formCategory, setFormCategory] = useState<'Perfumes' | 'Hidratantes' | 'Body Splash' | 'Kits' | 'Outros'>('Perfumes');
+  const [formCategoryId, setFormCategoryId] = useState<string>('cat-1');
   const [formStock, setFormStock] = useState<number>(0);
   const [formMinStock, setFormMinStock] = useState<number>(2);
   const [formCostPrice, setFormCostPrice] = useState<number>(0);
@@ -46,33 +51,27 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Status notifications
   const [errorMsg, setErrorMsg] = useState('');
   const [loading, setLoading] = useState(false);
 
-  // --- FILTERED PRODUCTS ---
   const filteredProducts = useMemo(() => {
     return products.filter(p => {
-      const matchSearch = 
-        p.name.toLowerCase().includes(search.toLowerCase()) || 
+      const matchSearch =
+        p.name.toLowerCase().includes(search.toLowerCase()) ||
         (p.barcode && p.barcode.includes(search)) ||
         (p.description && p.description.toLowerCase().includes(search.toLowerCase()));
-      
-      const matchCategory = selectedCategory === '' || p.category === selectedCategory;
+
+      const matchCategory = selectedCategory === '' || p.category_id === selectedCategory;
 
       return matchSearch && matchCategory;
     });
   }, [products, search, selectedCategory]);
 
-  // Categories list
-  const categories: Array<Product['category']> = ['Perfumes', 'Hidratantes', 'Body Splash', 'Kits', 'Outros'];
-
-  // Open product modal for creation
   const handleOpenCreateModal = () => {
     setEditingProduct(null);
     setFormName('');
     setFormBarcode('');
-    setFormCategory('Perfumes');
+    setFormCategoryId('cat-1');
     setFormStock(0);
     setFormMinStock(2);
     setFormCostPrice(0);
@@ -84,12 +83,11 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
     setIsProductModalOpen(true);
   };
 
-  // Open product modal for editing
   const handleOpenEditModal = (product: Product) => {
     setEditingProduct(product);
     setFormName(product.name);
     setFormBarcode(product.barcode || '');
-    setFormCategory(product.category);
+    setFormCategoryId(product.category_id || 'cat-1');
     setFormStock(product.stock);
     setFormMinStock(product.min_stock);
     setFormCostPrice(product.cost_price);
@@ -101,7 +99,6 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
     setIsProductModalOpen(true);
   };
 
-  // Handle Product CRUD submit
   const handleProductSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formName.trim()) {
@@ -116,7 +113,7 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
       const productPayload = {
         name: formName,
         barcode: formBarcode,
-        category: formCategory,
+        category_id: formCategoryId,
         stock: formStock,
         min_stock: formMinStock,
         cost_price: formCostPrice,
@@ -135,13 +132,12 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
       setIsProductModalOpen(false);
     } catch (err: any) {
       console.error(err);
-      setErrorMsg(err.message || 'Erro ao salvar produto. Verifique se o código de barras é único.');
+      setErrorMsg(err.message || 'Erro ao salvar produto.');
     } finally {
       setLoading(false);
     }
   };
 
-  // Open Stock Movement Modal
   const handleOpenMovementModal = (product: Product) => {
     setMovementProduct(product);
     setMovementType('Entrada');
@@ -151,7 +147,6 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
     setIsMovementModalOpen(true);
   };
 
-  // Handle Stock Movement Submit
   const handleMovementSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!movementProduct) return;
@@ -160,9 +155,8 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
       return;
     }
 
-    // Validation for exit
     if (movementType === 'Saída manual' && movementProduct.stock < movementQty) {
-      setErrorMsg(`Estoque insuficiente. Estoque disponível: ${movementProduct.stock} unidades.`);
+      setErrorMsg(`Estoque insuficiente. Disponível: ${movementProduct.stock} unidades.`);
       return;
     }
 
@@ -170,9 +164,12 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
       setLoading(true);
       setErrorMsg('');
 
-      const obs = movementObs || (movementType === 'Entrada' ? 'Entrada manual de mercadoria' : movementType === 'Ajuste' ? 'Ajuste manual de estoque' : 'Saída manual de estoque');
+      const obs = movementObs || (
+        movementType === 'Entrada' ? 'Entrada manual de mercadoria' :
+        movementType === 'Ajuste' ? 'Ajuste manual de estoque' :
+        'Saída manual de estoque'
+      );
       await onAddStockMovement(movementProduct.id, movementType, movementQty, obs);
-
       setIsMovementModalOpen(false);
     } catch (err: any) {
       console.error(err);
@@ -208,49 +205,43 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
 
   return (
     <section id="view-estoque" className="app-view">
-      {/* Top action bar */}
       <div className="card" style={{ padding: '16px', marginBottom: '20px' }}>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '15px', alignItems: 'center', justifyContent: 'space-between' }}>
-          
-          {/* Quick Search */}
           <div className="search-input-wrapper" style={{ flex: 1, minWidth: '260px', margin: 0 }}>
             <i className="fa-solid fa-magnifying-glass"></i>
-            <input 
-              type="text" 
-              className="form-control" 
+            <input
+              type="text"
+              className="form-control"
               placeholder="Buscar por nome, marca ou código de barras..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
 
-          {/* Quick Category Selector */}
           <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', paddingBottom: '2px' }}>
-            <button 
+            <button
               className={`filter-chip ${selectedCategory === '' ? 'active' : ''}`}
               onClick={() => setSelectedCategory('')}
             >
               Todos
             </button>
-            {categories.map(cat => (
+            {CATEGORY_OPTIONS.map(cat => (
               <button
-                key={cat}
-                className={`filter-chip ${selectedCategory === cat ? 'active' : ''}`}
-                onClick={() => setSelectedCategory(cat)}
+                key={cat.id}
+                className={`filter-chip ${selectedCategory === cat.id ? 'active' : ''}`}
+                onClick={() => setSelectedCategory(cat.id)}
               >
-                {cat}
+                {cat.name}
               </button>
             ))}
           </div>
 
-          {/* Add product button */}
           <button className="btn btn-primary" onClick={handleOpenCreateModal}>
             <i className="fa-solid fa-plus" style={{ marginRight: '8px' }}></i> Novo Produto
           </button>
         </div>
       </div>
 
-      {/* Products list card */}
       <div className="card">
         <div className="table-container">
           <table className="custom-table">
@@ -281,7 +272,7 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
                         width: '40px',
                         height: '40px',
                         borderRadius: '8px',
-                        background: `url(${p.photo_url || DEFAULT_CATEGORY_IMAGES[p.category]}) center/cover`,
+                        background: `url(${p.photo_url || DEFAULT_CATEGORY_IMAGES[p.category_name as keyof typeof DEFAULT_CATEGORY_IMAGES] || DEFAULT_CATEGORY_IMAGES.Outros}) center/cover`,
                         flexShrink: 0,
                         border: '1px solid var(--border-color)'
                       }}></div>
@@ -298,7 +289,7 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
                       {p.barcode || <span style={{ color: 'var(--text-muted)' }}>-</span>}
                     </td>
                     <td>
-                      <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>{p.category}</span>
+                      <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>{p.category_name}</span>
                     </td>
                     <td>{getStockBadge(p.stock, p.min_stock)}</td>
                     <td style={{ textAlign: 'right', fontWeight: 500 }}>{formatCurrency(p.cost_price)}</td>
@@ -306,38 +297,27 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
                     <td style={{ textAlign: 'right', color: 'var(--secondary)', fontWeight: 600 }}>{formatCurrency(p.wholesale_price)}</td>
                     <td style={{ textAlign: 'center' }}>
                       <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
-                        {/* Adjust stock button */}
-                        <button 
-                          className="btn btn-secondary" 
+                        <button
+                          className="btn btn-secondary"
                           onClick={() => handleOpenMovementModal(p)}
-                          title="Movimentar Estoque (Entradas / Saídas / Ajustes)"
+                          title="Movimentar Estoque"
                           style={{ padding: '6px 10px', fontSize: '12px' }}
                         >
                           <i className="fa-solid fa-right-left"></i> Movimentar
                         </button>
-                        
-                        {/* Edit button */}
-                        <button 
-                          className="btn btn-secondary" 
+                        <button
+                          className="btn btn-secondary"
                           onClick={() => handleOpenEditModal(p)}
                           title="Editar Detalhes"
                           style={{ padding: '6px 8px', fontSize: '12px' }}
                         >
                           <i className="fa-solid fa-pencil"></i>
                         </button>
-                        
-                        {/* Delete button */}
-                        <button 
-                          className="btn" 
+                        <button
+                          className="btn"
                           onClick={() => handleDeleteClick(p)}
                           title="Excluir Produto"
-                          style={{ 
-                            padding: '6px 8px', 
-                            fontSize: '12px', 
-                            background: 'var(--danger-bg)', 
-                            color: 'var(--danger)', 
-                            border: '1px solid rgba(239, 68, 68, 0.2)' 
-                          }}
+                          style={{ padding: '6px 8px', fontSize: '12px', background: 'var(--danger-bg)', color: 'var(--danger)', border: '1px solid rgba(239, 68, 68, 0.2)' }}
                         >
                           <i className="fa-solid fa-trash-can"></i>
                         </button>
@@ -351,7 +331,7 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
         </div>
       </div>
 
-      {/* MODAL 1: PRODUCT REGISTER & EDIT */}
+      {/* MODAL: PRODUCT REGISTER & EDIT */}
       {isProductModalOpen && (
         <div className="modal active">
           <div className="modal-content" style={{ maxWidth: '650px', width: '90%' }}>
@@ -359,7 +339,7 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
               <h3>{editingProduct ? 'Editar Produto' : 'Cadastrar Novo Produto'}</h3>
               <button className="modal-close-btn" onClick={() => setIsProductModalOpen(false)}>&times;</button>
             </div>
-            
+
             <form onSubmit={handleProductSubmit}>
               {errorMsg && (
                 <div className="alert-banner" style={{ background: 'var(--danger-bg)', color: 'var(--danger)', marginBottom: '15px', display: 'flex' }}>
@@ -371,21 +351,20 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '15px', marginBottom: '15px' }}>
                 <div>
                   <label className="form-label">Nome do Produto *</label>
-                  <input 
-                    type="text" 
-                    className="form-control" 
-                    required 
+                  <input
+                    type="text"
+                    className="form-control"
+                    required
                     value={formName}
                     onChange={(e) => setFormName(e.target.value)}
                     placeholder="Ex: Body Splash Pure Seduction"
                   />
                 </div>
-                
                 <div>
                   <label className="form-label">Código de Barras</label>
-                  <input 
-                    type="text" 
-                    className="form-control" 
+                  <input
+                    type="text"
+                    className="form-control"
                     value={formBarcode}
                     onChange={(e) => setFormBarcode(e.target.value)}
                     placeholder="Ex: 7890123456789"
@@ -396,35 +375,33 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px', marginBottom: '15px' }}>
                 <div>
                   <label className="form-label">Categoria *</label>
-                  <select 
-                    className="form-control" 
-                    value={formCategory} 
-                    onChange={(e) => setFormCategory(e.target.value as any)}
+                  <select
+                    className="form-control"
+                    value={formCategoryId}
+                    onChange={(e) => setFormCategoryId(e.target.value)}
                   >
-                    {categories.map(cat => (
-                      <option key={cat} value={cat}>{cat}</option>
+                    {CATEGORY_OPTIONS.map(cat => (
+                      <option key={cat.id} value={cat.id}>{cat.name}</option>
                     ))}
                   </select>
                 </div>
-                
                 <div>
                   <label className="form-label">Quantidade em Estoque</label>
-                  <input 
-                    type="number" 
-                    className="form-control" 
+                  <input
+                    type="number"
+                    className="form-control"
                     min="0"
-                    disabled={!!editingProduct} // Disable direct edit if editing (force movements log)
+                    disabled={!!editingProduct}
                     value={formStock}
                     onChange={(e) => setFormStock(Number(e.target.value))}
                   />
-                  {editingProduct && <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Use a aba "Movimentar" no painel principal para alterar o estoque.</span>}
+                  {editingProduct && <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Use "Movimentar" para alterar o estoque.</span>}
                 </div>
-
                 <div>
                   <label className="form-label">Estoque Mínimo *</label>
-                  <input 
-                    type="number" 
-                    className="form-control" 
+                  <input
+                    type="number"
+                    className="form-control"
                     min="0"
                     required
                     value={formMinStock}
@@ -436,48 +413,22 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px', marginBottom: '15px' }}>
                 <div>
                   <label className="form-label">Custo de Compra (R$) *</label>
-                  <input 
-                    type="number" 
-                    className="form-control" 
-                    step="0.01" 
-                    min="0"
-                    required
-                    value={formCostPrice}
-                    onChange={(e) => setFormCostPrice(Number(e.target.value))}
-                  />
+                  <input type="number" className="form-control" step="0.01" min="0" required value={formCostPrice} onChange={(e) => setFormCostPrice(Number(e.target.value))} />
                 </div>
-                
                 <div>
                   <label className="form-label">Preço Varejo (R$) *</label>
-                  <input 
-                    type="number" 
-                    className="form-control" 
-                    step="0.01" 
-                    min="0"
-                    required
-                    value={formRetailPrice}
-                    onChange={(e) => setFormRetailPrice(Number(e.target.value))}
-                  />
+                  <input type="number" className="form-control" step="0.01" min="0" required value={formRetailPrice} onChange={(e) => setFormRetailPrice(Number(e.target.value))} />
                 </div>
-
                 <div>
                   <label className="form-label">Preço Atacado (R$) *</label>
-                  <input 
-                    type="number" 
-                    className="form-control" 
-                    step="0.01" 
-                    min="0"
-                    required
-                    value={formWholesalePrice}
-                    onChange={(e) => setFormWholesalePrice(Number(e.target.value))}
-                  />
+                  <input type="number" className="form-control" step="0.01" min="0" required value={formWholesalePrice} onChange={(e) => setFormWholesalePrice(Number(e.target.value))} />
                 </div>
               </div>
 
               <div style={{ marginBottom: '15px' }}>
                 <label className="form-label">Descrição Opcional</label>
-                <textarea 
-                  className="form-control" 
+                <textarea
+                  className="form-control"
                   style={{ height: '70px', resize: 'vertical' }}
                   value={formDescription}
                   onChange={(e) => setFormDescription(e.target.value)}
@@ -486,28 +437,20 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
               </div>
 
               <div style={{ marginBottom: '20px' }}>
-                <label className="form-label">Foto do Produto (Imagem)</label>
+                <label className="form-label">Foto do Produto</label>
                 <div style={{ display: 'flex', gap: '15px', alignItems: 'center' }}>
-                  <input 
-                    type="file" 
-                    accept="image/*" 
-                    style={{ display: 'none' }} 
+                  <input
+                    type="file"
+                    accept="image/*"
+                    style={{ display: 'none' }}
                     ref={fileInputRef}
-                    onChange={(e) => {
-                      if (e.target.files && e.target.files[0]) {
-                        setSelectedFile(e.target.files[0]);
-                      }
-                    }}
+                    onChange={(e) => { if (e.target.files?.[0]) setSelectedFile(e.target.files[0]); }}
                   />
-                  <button 
-                    type="button" 
-                    className="btn btn-secondary" 
-                    onClick={() => fileInputRef.current?.click()}
-                  >
+                  <button type="button" className="btn btn-secondary" onClick={() => fileInputRef.current?.click()}>
                     Escolher Imagem
                   </button>
                   <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                    {selectedFile ? selectedFile.name : editingProduct?.photo_url ? 'Mantendo imagem atual' : 'Sem foto selecionada (será usado placeholder)'}
+                    {selectedFile ? selectedFile.name : editingProduct?.photo_url ? 'Mantendo imagem atual' : 'Sem foto (será usado placeholder)'}
                   </span>
                 </div>
               </div>
@@ -523,7 +466,7 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
         </div>
       )}
 
-      {/* MODAL 2: STOCK MOVEMENT ACTIONS (ENTRADA / SAÍDA / AJUSTE) */}
+      {/* MODAL: STOCK MOVEMENT */}
       {isMovementModalOpen && movementProduct && (
         <div className="modal active">
           <div className="modal-content" style={{ maxWidth: '480px', width: '90%' }}>
@@ -531,7 +474,7 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
               <h3>Movimentar Estoque</h3>
               <button className="modal-close-btn" onClick={() => setIsMovementModalOpen(false)}>&times;</button>
             </div>
-            
+
             <form onSubmit={handleMovementSubmit}>
               {errorMsg && (
                 <div className="alert-banner" style={{ background: 'var(--danger-bg)', color: 'var(--danger)', marginBottom: '15px', display: 'flex' }}>
@@ -551,30 +494,17 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
               <div style={{ marginBottom: '15px' }}>
                 <label className="form-label">Tipo de Movimentação *</label>
                 <div style={{ display: 'flex', gap: '10px' }}>
-                  <button 
-                    type="button" 
-                    className={`btn ${movementType === 'Entrada' ? 'btn-primary' : 'btn-secondary'}`}
-                    style={{ flex: 1 }}
-                    onClick={() => setMovementType('Entrada')}
-                  >
-                    <i className="fa-solid fa-plus-circle"></i> Entrada
-                  </button>
-                  <button 
-                    type="button" 
-                    className={`btn ${movementType === 'Saída manual' ? 'btn-primary' : 'btn-secondary'}`}
-                    style={{ flex: 1 }}
-                    onClick={() => setMovementType('Saída manual')}
-                  >
-                    <i className="fa-solid fa-minus-circle"></i> Saída
-                  </button>
-                  <button 
-                    type="button" 
-                    className={`btn ${movementType === 'Ajuste' ? 'btn-primary' : 'btn-secondary'}`}
-                    style={{ flex: 1 }}
-                    onClick={() => setMovementType('Ajuste')}
-                  >
-                    <i className="fa-solid fa-arrows-spin"></i> Ajuste
-                  </button>
+                  {(['Entrada', 'Saída manual', 'Ajuste'] as const).map(type => (
+                    <button
+                      key={type}
+                      type="button"
+                      className={`btn ${movementType === type ? 'btn-primary' : 'btn-secondary'}`}
+                      style={{ flex: 1 }}
+                      onClick={() => setMovementType(type)}
+                    >
+                      {type}
+                    </button>
+                  ))}
                 </div>
               </div>
 
@@ -582,24 +512,24 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
                 <label className="form-label">
                   {movementType === 'Entrada' && 'Quantidade a Adicionar *'}
                   {movementType === 'Saída manual' && 'Quantidade a Retirar *'}
-                  {movementType === 'Ajuste' && 'Novo Saldo do Estoque (Quantidade Final) *'}
+                  {movementType === 'Ajuste' && 'Novo Saldo Final *'}
                 </label>
-                <input 
-                  type="number" 
-                  className="form-control" 
+                <input
+                  type="number"
+                  className="form-control"
                   min="0"
                   required
                   value={movementQty === 0 ? '' : movementQty}
                   onChange={(e) => setMovementQty(Number(e.target.value))}
-                  placeholder={movementType === 'Ajuste' ? 'Defina a quantidade exata' : 'Informe o número de itens'}
+                  placeholder={movementType === 'Ajuste' ? 'Quantidade exata' : 'Número de itens'}
                 />
               </div>
 
               <div style={{ marginBottom: '20px' }}>
                 <label className="form-label">Observação / Motivo</label>
-                <input 
-                  type="text" 
-                  className="form-control" 
+                <input
+                  type="text"
+                  className="form-control"
                   value={movementObs}
                   onChange={(e) => setMovementObs(e.target.value)}
                   placeholder="Ex: Chegaram 10 perfumes no lote novo"
