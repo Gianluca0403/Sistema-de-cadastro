@@ -12,11 +12,11 @@ interface ProductsViewProps {
 }
 
 const CATEGORY_OPTIONS = [
-  { id: 'cat-1', name: 'Perfumes' },
-  { id: 'cat-2', name: 'Hidratantes' },
-  { id: 'cat-3', name: 'Body Splash' },
-  { id: 'cat-4', name: 'Kits' },
-  { id: 'cat-5', name: 'Outros' },
+  { id: 'dca569b3-1fb3-4244-a117-9d69cc2915a9', name: 'Perfumes' },
+  { id: '3d325674-7447-4a8a-bd7d-e9cd1246c6dd', name: 'Hidratantes' },
+  { id: 'b73330bf-29fd-46b8-aff2-5a298c8592dc', name: 'Body Splash' },
+  { id: '2894918a-6a61-423c-af79-ae2e058e2dc9', name: 'Kits' },
+  { id: '39263b3d-a23f-4599-a685-eab7c5d2fdc8', name: 'Outros' },
 ];
 
 export const ProductsView: React.FC<ProductsViewProps> = ({
