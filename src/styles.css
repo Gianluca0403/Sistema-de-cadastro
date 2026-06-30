@@ -1428,11 +1428,20 @@ body {
     }
 }
 
+.brand img {
+    width: 36px;
+    height: 36px;
+    object-fit: contain;
+    border-radius: 8px;
+    flex-shrink: 0;
+}
+
 /* NOVAS CLASSES PARA O SISTEMA DE DESCONTO FLEXÍVEL */
 .discount-container {
     display: flex;
     justify-content: space-between;
     align-items: center;
+    flex-wrap: nowrap;
 }
 
 .discount-inputs {
@@ -1442,15 +1451,48 @@ body {
 }
 
 #cart-discount-type {
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
     background-color: rgba(255, 255, 255, 0.05);
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%2394a3b8'><path d='M7 10l5 5 5-5z'/></svg>");
+    background-repeat: no-repeat;
+    background-position: right 6px center;
+    background-size: 14px;
     color: #fff;
     border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: 4px;
     cursor: pointer;
     transition: border-color 0.2s;
+    width: 65px;
+    height: 30px;
+    padding: 2px 18px 2px 6px;
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1;
 }
 
 #cart-discount-type:focus {
     border-color: var(--primary);
     outline: none;
+}
+
+#cart-discount-type option {
+    background-color: #110e1c;
+    color: #fff;
+}
+
+.discount-inputs input#cart-discount {
+    width: 80px;
+    height: 30px;
+    padding: 4px 8px;
+    text-align: right;
+}
+
+.brand img {
+    width: 36px;
+    height: 36px;
+    object-fit: contain;
+    border-radius: 8px;
+    flex-shrink: 0;
 }
