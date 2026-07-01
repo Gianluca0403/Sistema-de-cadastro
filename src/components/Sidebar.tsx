@@ -19,8 +19,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, onViewChange, dbT
   return (
     <aside id="sidebar">
       <div className="brand">
-        <i className="fa-solid fa-wand-magic-sparkles brand-icon"></i>
-        <span className="brand-name">JAJA Cosméticos</span>
+        <img src="/Img/logo_MMC_transparente.png" alt="MMC Imports" className="brand-logo" />
+        <span className="brand-name">MMC Imports</span>
       </div>
       
       <nav>
@@ -40,7 +40,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, onViewChange, dbT
       
       <div className="sidebar-footer" style={{ padding: '20px', borderTop: '1px solid var(--border-color)' }}>
         <div className="store-info">
-          <p style={{ fontWeight: 600, color: 'var(--text-primary)' }}>JAJA Perfumaria</p>
+          <p style={{ fontWeight: 600, color: 'var(--text-primary)' }}>MMC Imports</p>
           <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginTop: '4px' }}>
             <span style={{ 
               width: '8px', 
