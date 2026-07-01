@@ -166,8 +166,8 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
 
       const obs = movementObs || (
         movementType === 'Entrada' ? 'Entrada manual de mercadoria' :
-        movementType === 'Ajuste' ? 'Ajuste manual de estoque' :
-        'Saída manual de estoque'
+          movementType === 'Ajuste' ? 'Ajuste manual de estoque' :
+            'Saída manual de estoque'
       );
       await onAddStockMovement(movementProduct.id, movementType, movementQty, obs);
       setIsMovementModalOpen(false);
@@ -252,8 +252,8 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
                 <th>Categoria</th>
                 <th>Estoque</th>
                 <th style={{ textAlign: 'right' }}>Custo</th>
-                <th style={{ textAlign: 'right' }}>Preço Varejo</th>
                 <th style={{ textAlign: 'right' }}>Preço Atacado</th>
+                <th style={{ textAlign: 'right' }}>Preço Varejo</th>
                 <th style={{ textAlign: 'center' }}>Ações</th>
               </tr>
             </thead>
@@ -293,8 +293,8 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
                     </td>
                     <td>{getStockBadge(p.stock, p.min_stock)}</td>
                     <td style={{ textAlign: 'right', fontWeight: 500 }}>{formatCurrency(p.cost_price)}</td>
-                    <td style={{ textAlign: 'right', color: 'var(--primary)', fontWeight: 600 }}>{formatCurrency(p.retail_price)}</td>
                     <td style={{ textAlign: 'right', color: 'var(--secondary)', fontWeight: 600 }}>{formatCurrency(p.wholesale_price)}</td>
+                    <td style={{ textAlign: 'right', color: 'var(--primary)', fontWeight: 600 }}>{formatCurrency(p.retail_price)}</td>
                     <td style={{ textAlign: 'center' }}>
                       <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
                         <button
@@ -424,18 +424,6 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
                   />
                 </div>
                 <div>
-                  <label className="form-label">Preço Varejo (R$) *</label>
-                  <input
-                    type="number"
-                    className="form-control"
-                    step="0.01"
-                    min="0"
-                    required
-                    value={formRetailPrice === 0 ? '' : formRetailPrice}
-                    onChange={(e) => setFormRetailPrice(e.target.value === '' ? 0 : Number(e.target.value))}
-                  />
-                </div>
-                <div>
                   <label className="form-label">Preço Atacado (R$) *</label>
                   <input
                     type="number"
@@ -445,6 +433,18 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
                     required
                     value={formWholesalePrice === 0 ? '' : formWholesalePrice}
                     onChange={(e) => setFormWholesalePrice(e.target.value === '' ? 0 : Number(e.target.value))}
+                  />
+                </div>
+                <div>
+                  <label className="form-label">Preço Varejo (R$) *</label>
+                  <input
+                    type="number"
+                    className="form-control"
+                    step="0.01"
+                    min="0"
+                    required
+                    value={formRetailPrice === 0 ? '' : formRetailPrice}
+                    onChange={(e) => setFormRetailPrice(e.target.value === '' ? 0 : Number(e.target.value))}
                   />
                 </div>
               </div>
