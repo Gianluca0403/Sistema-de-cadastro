@@ -392,8 +392,8 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
                     className="form-control"
                     min="0"
                     disabled={!!editingProduct}
-                    value={formStock}
-                    onChange={(e) => setFormStock(Number(e.target.value))}
+                    value={formStock === 0 ? '' : formStock}
+                    onChange={(e) => setFormStock(e.target.value === '' ? 0 : Number(e.target.value))}
                   />
                   {editingProduct && <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Use "Movimentar" para alterar o estoque.</span>}
                 </div>
@@ -404,8 +404,8 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
                     className="form-control"
                     min="0"
                     required
-                    value={formMinStock}
-                    onChange={(e) => setFormMinStock(Number(e.target.value))}
+                    value={formMinStock === 0 ? '' : formMinStock}
+                    onChange={(e) => setFormMinStock(e.target.value === '' ? 0 : Number(e.target.value))}
                   />
                 </div>
               </div>
@@ -413,15 +413,39 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px', marginBottom: '15px' }}>
                 <div>
                   <label className="form-label">Custo de Compra (R$) *</label>
-                  <input type="number" className="form-control" step="0.01" min="0" required value={formCostPrice} onChange={(e) => setFormCostPrice(Number(e.target.value))} />
+                  <input
+                    type="number"
+                    className="form-control"
+                    step="0.01"
+                    min="0"
+                    required
+                    value={formCostPrice === 0 ? '' : formCostPrice}
+                    onChange={(e) => setFormCostPrice(e.target.value === '' ? 0 : Number(e.target.value))}
+                  />
                 </div>
                 <div>
                   <label className="form-label">Preço Varejo (R$) *</label>
-                  <input type="number" className="form-control" step="0.01" min="0" required value={formRetailPrice} onChange={(e) => setFormRetailPrice(Number(e.target.value))} />
+                  <input
+                    type="number"
+                    className="form-control"
+                    step="0.01"
+                    min="0"
+                    required
+                    value={formRetailPrice === 0 ? '' : formRetailPrice}
+                    onChange={(e) => setFormRetailPrice(e.target.value === '' ? 0 : Number(e.target.value))}
+                  />
                 </div>
                 <div>
                   <label className="form-label">Preço Atacado (R$) *</label>
-                  <input type="number" className="form-control" step="0.01" min="0" required value={formWholesalePrice} onChange={(e) => setFormWholesalePrice(Number(e.target.value))} />
+                  <input
+                    type="number"
+                    className="form-control"
+                    step="0.01"
+                    min="0"
+                    required
+                    value={formWholesalePrice === 0 ? '' : formWholesalePrice}
+                    onChange={(e) => setFormWholesalePrice(e.target.value === '' ? 0 : Number(e.target.value))}
+                  />
                 </div>
               </div>
 
