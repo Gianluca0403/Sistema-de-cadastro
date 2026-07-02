@@ -73,7 +73,8 @@ export interface Sale {
   created_at: string;
   total_price: number;
   discount: number;
-  payment_method: 'PIX' | 'Cartão' | 'Dinheiro' | 'Crediário';
+  payment_method: 'PIX' | 'Cartão' | 'Dinheiro' | 'Boleto';
+  installments?: number | null;
   customer_id: string | null;
   user_email: string;
   cash_register_id: string | null;

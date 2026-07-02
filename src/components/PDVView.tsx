@@ -8,7 +8,8 @@ interface PDVViewProps {
   onSubmitSale: (saleData: {
     total_price: number;
     discount: number;
-    payment_method: 'PIX' | 'Cartão' | 'Dinheiro' | 'Crediário';
+    payment_method: 'PIX' | 'Cartão' | 'Dinheiro' | 'Boleto';
+    installments: number | null;
     customer_id: string | null;
   }, items: Array<{
     product_id: string;
@@ -39,7 +40,8 @@ export const PDVView: React.FC<PDVViewProps> = ({
   const [cart, setCart] = useState<CartItem[]>([]);
   const [discount, setDiscount] = useState<number>(0);
   const [discountType, setDiscountType] = useState<'fixed' | 'percent'>('fixed');
-  const [paymentMethod, setPaymentMethod] = useState<'PIX' | 'Cartão' | 'Dinheiro' | 'Crediário'>('PIX');
+  const [paymentMethod, setPaymentMethod] = useState<'PIX' | 'Cartão' | 'Dinheiro' | 'Boleto'>('PIX');
+  const [installments, setInstallments] = useState<number>(1);
   const [selectedClientId, setSelectedClientId] = useState<string>('');
 
   // Operational states
@@ -155,6 +157,7 @@ export const PDVView: React.FC<PDVViewProps> = ({
     setDiscountType('fixed');
     setSelectedClientId('');
     setPaymentMethod('PIX');
+    setInstallments(1);
     setErrorMsg('');
   };
 
@@ -194,8 +197,8 @@ export const PDVView: React.FC<PDVViewProps> = ({
       return;
     }
 
-    if (paymentMethod === 'Crediário' && !selectedClientId) {
-      setErrorMsg('Para vendas no Crediário, selecione obrigatoriamente um cliente.');
+    if (paymentMethod === 'Boleto' && !selectedClientId) {
+      setErrorMsg('Para vendas no Boleto, selecione obrigatoriamente um cliente.');
       return;
     }
 
@@ -220,6 +223,7 @@ export const PDVView: React.FC<PDVViewProps> = ({
         total_price: totals.total,
         discount: totals.discountValue,
         payment_method: paymentMethod,
+        installments: paymentMethod === 'Boleto' ? installments : null,
         customer_id: selectedClientId || null
       }, saleItemsPayload);
 
@@ -511,15 +515,31 @@ export const PDVView: React.FC<PDVViewProps> = ({
                     <option value="PIX">PIX</option>
                     <option value="Cartão">Cartão</option>
                     <option value="Dinheiro">Dinheiro</option>
-                    <option value="Crediário">Crediário (Fiado)</option>
+                    <option value="Boleto">Boleto</option>
                   </select>
                 </div>
               </div>
 
+              {paymentMethod === 'Boleto' && (
+                <div style={{ marginBottom: '12px' }}>
+                  <label className="form-label" style={{ fontSize: '11px', marginBottom: '4px' }}>Parcelas</label>
+                  <select
+                    className="form-control"
+                    style={{ padding: '6px' }}
+                    value={installments}
+                    onChange={(e) => setInstallments(Number(e.target.value))}
+                  >
+                    <option value={1}>1x</option>
+                    <option value={2}>2x</option>
+                    <option value={3}>3x</option>
+                  </select>
+                </div>
+              )}
+
               <div style={{ marginBottom: '15px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
                   <label className="form-label" style={{ fontSize: '11px', margin: 0 }}>
-                    Cliente {paymentMethod === 'Crediário' && <span style={{ color: 'var(--danger)' }}>*</span>}
+                    Cliente {paymentMethod === 'Boleto' && <span style={{ color: 'var(--danger)' }}>*</span>}
                   </label>
                   <button
                     type="button"

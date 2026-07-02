@@ -203,11 +203,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
         <div className="card metric-card">
           <div className="metric-info">
-            <h3>Pendente (Crediário)</h3>
+            <h3>Pendente (Boleto)</h3>
             <div className="value" id="metric-pending-sales" style={{ color: 'var(--warning)' }}>
               {formatCurrency(metrics.totalReceivablesPending)}
             </div>
-            <span className="subtitle">Total fiado ativo</span>
+            <span className="subtitle">Total em boletos ativos</span>
           </div>
           <div className="metric-icon red"><i className="fa-solid fa-file-invoice-dollar"></i></div>
         </div>

@@ -70,7 +70,7 @@ export const MovementsView: React.FC<MovementsViewProps> = ({
 
   // Settle/Delete Sale (Estorno de venda)
   const handleDeleteSaleClick = async (sale: Sale) => {
-    if (window.confirm(`Tem certeza que deseja EXCLUIR e ESTORNAR a venda #${sale.id.substring(0, 8)}?\nIsso irá repor os produtos no estoque e estornar dívidas de crediário.`)) {
+    if (window.confirm(`Tem certeza que deseja EXCLUIR e ESTORNAR a venda #${sale.id.substring(0, 8)}?\nIsso irá repor os produtos no estoque e estornar dívidas em aberto.`)) {
       try {
         await onDeleteSale(sale.id);
         if (selectedSale?.id === sale.id) {
@@ -204,13 +204,13 @@ export const MovementsView: React.FC<MovementsViewProps> = ({
                           <span style={{ 
                             fontSize: '11px', 
                             padding: '3px 8px', 
-                            background: s.payment_method === 'Crediário' ? 'var(--danger-bg)' : 'rgba(255,255,255,0.05)',
-                            color: s.payment_method === 'Crediário' ? 'var(--warning)' : 'var(--text-secondary)',
+                            background: s.payment_method === 'Boleto' ? 'var(--danger-bg)' : 'rgba(255,255,255,0.05)',
+                            color: s.payment_method === 'Boleto' ? 'var(--warning)' : 'var(--text-secondary)',
                             borderRadius: '4px',
                             border: '1px solid var(--border-color)',
                             fontWeight: 500
                           }}>
-                            {s.payment_method}
+                            {s.payment_method}{s.payment_method === 'Boleto' && s.installments ? ` ${s.installments}x` : ''}
                           </span>
                         </td>
                         <td style={{ textAlign: 'right', color: 'var(--danger)' }}>
@@ -354,8 +354,8 @@ export const MovementsView: React.FC<MovementsViewProps> = ({
                 </div>
                 <div>
                   <span style={{ color: 'var(--text-muted)', display: 'block' }}>Forma de Pagamento:</span>
-                  <span style={{ fontWeight: 600, color: selectedSale.payment_method === 'Crediário' ? 'var(--warning)' : 'inherit' }}>
-                    {selectedSale.payment_method}
+                  <span style={{ fontWeight: 600, color: selectedSale.payment_method === 'Boleto' ? 'var(--warning)' : 'inherit' }}>
+                    {selectedSale.payment_method}{selectedSale.payment_method === 'Boleto' && selectedSale.installments ? ` (${selectedSale.installments}x)` : ''}
                   </span>
                 </div>
               </div>
