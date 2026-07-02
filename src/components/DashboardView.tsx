@@ -89,7 +89,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     products.forEach(p => {
       const qty = Number(p.stock) || 0;
       totalInventoryCost += qty * (Number(p.cost_price) || 0);
-      totalInventoryValue += qty * (Number(p.retail_price) || 0);
+      totalInventoryValue += qty * (Number(p.wholesale_price) || 0);
       if (qty <= (Number(p.min_stock) || 0)) {
         lowStockItemsCount++;
       }
@@ -416,7 +416,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
         <div className="card" style={{ padding: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
-            <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Valor de Venda do Estoque</span>
+            <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Valor de Venda no Atacado</span>
             <h4 style={{ fontSize: '18px', fontWeight: 700, marginTop: '4px', color: 'var(--primary)' }}>
               {formatCurrency(metrics.totalInventoryValue)}
             </h4>
