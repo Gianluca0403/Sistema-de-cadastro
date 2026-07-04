@@ -90,7 +90,8 @@ CREATE TABLE IF NOT EXISTS public.sales (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
     total_price NUMERIC(10, 2) NOT NULL DEFAULT 0.00 CHECK (total_price >= 0),
     discount NUMERIC(10, 2) NOT NULL DEFAULT 0.00 CHECK (discount >= 0),
-    payment_method TEXT NOT NULL CHECK (payment_method IN ('PIX', 'Cartão', 'Dinheiro', 'Crediário')),
+    payment_method TEXT NOT NULL CHECK (payment_method IN ('PIX', 'Cartão', 'Dinheiro', 'Crediário', 'Boleto')),
+    installments INTEGER NOT NULL DEFAULT 1 CHECK (installments >= 1),
     customer_id UUID REFERENCES public.customers(id) ON DELETE SET NULL,
     user_email TEXT NOT NULL,
     cash_register_id UUID REFERENCES public.cash_register(id) ON DELETE SET NULL

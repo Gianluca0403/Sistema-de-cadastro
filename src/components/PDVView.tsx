@@ -10,6 +10,7 @@ interface PDVViewProps {
     discount: number;
     payment_method: 'PIX' | 'Cartão' | 'Dinheiro' | 'Boleto';
     installments: number | null;
+    due_dates?: string[] | null;
     customer_id: string | null;
   }, items: Array<{
     product_id: string;
@@ -25,6 +26,30 @@ interface CartItem {
   quantity: number;
   priceType: 'retail' | 'wholesale';
 }
+
+const gerarLinkWhatsApp = (cart: CartItem[], total: number, telefoneCliente: string) => {
+  let texto = `COMPROVANTE DE VENDA\n`;
+  texto += `-----------------------------------\n`;
+
+  cart.forEach((item) => {
+    const preco = item.priceType === 'retail' ? item.product.retail_price : item.product.wholesale_price;
+    texto += `▪ ${item.quantity}x ${item.product.name} - R$ ${preco.toFixed(2)}\n`;
+  });
+
+  texto += `-----------------------------------\n`;
+  texto += `Total Pago: R$ ${total.toFixed(2)}\n\n`;
+  texto += `Obrigado pela preferência! Volte sempre. 🤝`;
+
+  const textoCodificado = encodeURIComponent(texto);
+  
+  // Limpa o telefone (remove parênteses, traços e espaços)
+  let telefoneLimpo = telefoneCliente.replace(/\D/g, '');
+  if (!telefoneLimpo.startsWith('55')) {
+    telefoneLimpo = `55${telefoneLimpo}`;
+  }
+
+  return `https://wa.me/${telefoneLimpo}?text=${textoCodificado}`;
+};
 
 export const PDVView: React.FC<PDVViewProps> = ({
   products,
@@ -42,6 +67,7 @@ export const PDVView: React.FC<PDVViewProps> = ({
   const [discountType, setDiscountType] = useState<'fixed' | 'percent'>('fixed');
   const [paymentMethod, setPaymentMethod] = useState<'PIX' | 'Cartão' | 'Dinheiro' | 'Boleto'>('PIX');
   const [installments, setInstallments] = useState<number>(1);
+  const [dueDates, setDueDates] = useState<string[]>(['']);
   const [selectedClientId, setSelectedClientId] = useState<string>('');
 
   // Operational states
@@ -54,6 +80,35 @@ export const PDVView: React.FC<PDVViewProps> = ({
   useEffect(() => {
     searchInputRef.current?.focus();
   }, []);
+
+  // Ajusta o array de datas de vencimento sempre que o número de parcelas mudar
+  useEffect(() => {
+    setDueDates(prev => {
+      const updated = [...prev];
+      while (updated.length < installments) updated.push('');
+      return updated.slice(0, installments);
+    });
+  }, [installments]);
+
+  // Sugere datas padrão (30/60/90 dias) sempre que o usuário muda pra Boleto
+  const applyDefaultDueDates = () => {
+    const today = new Date();
+    const suggested: string[] = [];
+    for (let i = 1; i <= installments; i++) {
+      const d = new Date(today);
+      d.setDate(d.getDate() + 30 * i);
+      suggested.push(d.toISOString().split('T')[0]);
+    }
+    setDueDates(suggested);
+  };
+
+  const updateDueDate = (index: number, value: string) => {
+    setDueDates(prev => {
+      const updated = [...prev];
+      updated[index] = value;
+      return updated;
+    });
+  };
 
   // Filter products for left grid selection
   const filteredProducts = useMemo(() => {
@@ -158,6 +213,7 @@ export const PDVView: React.FC<PDVViewProps> = ({
     setSelectedClientId('');
     setPaymentMethod('PIX');
     setInstallments(1);
+    setDueDates(['']);
     setErrorMsg('');
   };
 
@@ -197,9 +253,17 @@ export const PDVView: React.FC<PDVViewProps> = ({
       return;
     }
 
-    if (paymentMethod === 'Boleto' && !selectedClientId) {
-      setErrorMsg('Para vendas no Boleto, selecione obrigatoriamente um cliente.');
-      return;
+    if (paymentMethod === 'Boleto') {
+      if (!selectedClientId) {
+        setErrorMsg('Para vendas no Boleto, selecione obrigatoriamente um cliente.');
+        return;
+      }
+
+      const hasEmptyDueDate = dueDates.slice(0, installments).some(d => !d);
+      if (hasEmptyDueDate) {
+        setErrorMsg('Preencha a data de vencimento de todas as parcelas.');
+        return;
+      }
     }
 
     try {
@@ -224,10 +288,28 @@ export const PDVView: React.FC<PDVViewProps> = ({
         discount: totals.discountValue,
         payment_method: paymentMethod,
         installments: paymentMethod === 'Boleto' ? installments : null,
+        due_dates: paymentMethod === 'Boleto' ? dueDates.slice(0, installments) : null,
         customer_id: selectedClientId || null
       }, saleItemsPayload);
 
       showSuccessToast('Venda registrada com sucesso!');
+
+      if (selectedClientId) {
+        // Encontra o cliente na lista de clientes passados por props
+        const cliente = clients.find(c => c.id === selectedClientId);
+        
+        // Pega o telefone (usando "any" temporariamente caso sua interface Customer não tenha o tipo exato definido aqui)
+        const telefoneDoCliente = (cliente as any)?.phone || (cliente as any)?.telefone;
+
+        if (cliente && telefoneDoCliente) {
+          const linkWpp = gerarLinkWhatsApp(cart, totals.total, telefoneDoCliente);
+          const querEnviar = window.confirm("Deseja enviar o comprovante no WhatsApp do cliente?");
+          if (querEnviar) {
+            window.open(linkWpp, '_blank');
+          }
+        }
+      }
+
       clearCart();
     } catch (err: any) {
       console.error(err);
@@ -510,7 +592,13 @@ export const PDVView: React.FC<PDVViewProps> = ({
                     className="form-control"
                     style={{ padding: '6px' }}
                     value={paymentMethod}
-                    onChange={(e) => setPaymentMethod(e.target.value as any)}
+                    onChange={(e) => {
+                      const newMethod = e.target.value as any;
+                      setPaymentMethod(newMethod);
+                      if (newMethod === 'Boleto') {
+                        applyDefaultDueDates();
+                      }
+                    }}
                   >
                     <option value="PIX">PIX</option>
                     <option value="Cartão">Cartão</option>
@@ -533,6 +621,38 @@ export const PDVView: React.FC<PDVViewProps> = ({
                     <option value={2}>2x</option>
                     <option value={3}>3x</option>
                   </select>
+
+                  {/* Campos de Vencimento por Parcela */}
+                  <div style={{ marginTop: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <label className="form-label" style={{ fontSize: '11px', margin: 0 }}>
+                        Vencimento das Parcelas <span style={{ color: 'var(--danger)' }}>*</span>
+                      </label>
+                      <button
+                        type="button"
+                        onClick={applyDefaultDueDates}
+                        style={{ background: 'none', border: 'none', color: 'var(--primary)', fontSize: '10px', cursor: 'pointer' }}
+                      >
+                        Usar padrão (30/60/90 dias)
+                      </button>
+                    </div>
+
+                    {Array.from({ length: installments }).map((_, idx) => (
+                      <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span style={{ fontSize: '11px', color: 'var(--text-muted)', minWidth: '55px' }}>
+                          Parcela {idx + 1}:
+                        </span>
+                        <input
+                          type="date"
+                          className="form-control"
+                          style={{ padding: '6px', flex: 1 }}
+                          value={dueDates[idx] || ''}
+                          onChange={(e) => updateDueDate(idx, e.target.value)}
+                          required
+                        />
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
 

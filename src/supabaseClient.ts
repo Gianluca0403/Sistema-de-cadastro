@@ -1,17 +1,17 @@
 import { createClient } from '@supabase/supabase-js';
-import { Product, Category, Customer, Reseller, CashRegister, CashMovement, Sale, SaleItem, StockMovement } from './types';
+import { Product, Category, Customer, Reseller, CashRegister, CashMovement, Sale, SaleItem, StockMovement, SaleInstallment } from './types';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
 
-export const isSupabaseConfigured = 
-  supabaseUrl && 
-  supabaseUrl !== 'YOUR_SUPABASE_URL' && 
-  supabaseAnonKey && 
+export const isSupabaseConfigured =
+  supabaseUrl &&
+  supabaseUrl !== 'YOUR_SUPABASE_URL' &&
+  supabaseAnonKey &&
   supabaseAnonKey !== 'YOUR_SUPABASE_ANON_KEY';
 
-export const supabase = isSupabaseConfigured 
-  ? createClient(supabaseUrl, supabaseAnonKey) 
+export const supabase = isSupabaseConfigured
+  ? createClient(supabaseUrl, supabaseAnonKey)
   : null;
 
 export const DEFAULT_CATEGORY_IMAGES = {
@@ -31,6 +31,7 @@ const MOCK_KEYS = {
   CASH_MOVEMENTS: 'jaja_cash_movements_mock',
   SALES: 'jaja_sales_mock',
   SALE_ITEMS: 'jaja_sale_items_mock',
+  SALE_INSTALLMENTS: 'jaja_sale_installments_mock',
   STOCK_MOVEMENTS: 'jaja_stock_movements_mock',
   USER: 'jaja_user_mock'
 };
@@ -39,7 +40,7 @@ const MOCK_KEYS = {
 const getMockCategories = (): Category[] => {
   const cats = localStorage.getItem(MOCK_KEYS.CATEGORIES);
   if (cats) return JSON.parse(cats);
-  
+
   const defaults: Category[] = [
     { id: 'cat-1', name: 'Perfumes' },
     { id: 'cat-2', name: 'Hidratantes' },
@@ -201,6 +202,56 @@ const initMockDatabase = () => {
     localStorage.setItem(MOCK_KEYS.SALES, JSON.stringify([]));
     localStorage.setItem(MOCK_KEYS.SALE_ITEMS, JSON.stringify([]));
   }
+
+  if (!localStorage.getItem(MOCK_KEYS.SALE_INSTALLMENTS)) {
+    localStorage.setItem(MOCK_KEYS.SALE_INSTALLMENTS, JSON.stringify([]));
+  }
+};
+
+// Gera as datas de vencimento e valores de cada parcela de um boleto.
+// Se customDueDates for fornecido (uma data por parcela), usa essas datas.
+// Caso contrário, usa o padrão: 1ª parcela 30 dias após a venda, demais a cada 30 dias.
+const generateInstallmentPlan = (
+  saleId: string,
+  totalPrice: number,
+  installmentsCount: number,
+  saleDate: Date,
+  customDueDates?: string[]
+) => {
+  const plan: Omit<SaleInstallment, 'id'>[] = [];
+  const baseAmount = Math.floor((totalPrice / installmentsCount) * 100) / 100;
+  let accumulated = 0;
+
+  for (let i = 1; i <= installmentsCount; i++) {
+    let dueDateStr: string;
+
+    if (customDueDates && customDueDates[i - 1]) {
+      dueDateStr = customDueDates[i - 1];
+    } else {
+      const dueDate = new Date(saleDate);
+      dueDate.setDate(dueDate.getDate() + 30 * i);
+      dueDateStr = dueDate.toISOString().split('T')[0];
+    }
+
+    // Ajusta a última parcela para cobrir eventuais centavos de arredondamento
+    const amount = i === installmentsCount
+      ? Math.round((totalPrice - accumulated) * 100) / 100
+      : baseAmount;
+    accumulated += amount;
+
+    plan.push({
+      sale_id: saleId,
+      installment_number: i,
+      amount,
+      due_date: dueDateStr,
+      status: 'pendente',
+      paid_at: null,
+      paid_amount: null,
+      payment_method: null
+    });
+  }
+
+  return plan;
 };
 
 initMockDatabase();
@@ -213,6 +264,10 @@ const fileToBase64 = (file: File): Promise<string> => {
     reader.onerror = error => reject(error);
   });
 };
+
+// Formas de pagamento que NÃO representam dinheiro imediato em caixa.
+// Boleto e Crediário só geram entrada de caixa quando forem efetivamente pagos.
+const DEFERRED_PAYMENT_METHODS = ['Crediário', 'Boleto'];
 
 export const dbService = {
   // --- AUTHENTICATION ---
@@ -485,7 +540,7 @@ export const dbService = {
       } else {
         const list = JSON.parse(localStorage.getItem(MOCK_KEYS.RESELLERS) || '[]');
         localStorage.setItem(MOCK_KEYS.RESELLERS, JSON.stringify(list.filter((r: any) => r.id !== id)));
-        
+
         // Remove reference in customers
         const customers = JSON.parse(localStorage.getItem(MOCK_KEYS.CUSTOMERS) || '[]');
         const updatedCusts = customers.map((c: any) => c.reseller_id === id ? { ...c, is_reseller: false, reseller_id: null } : c);
@@ -576,7 +631,7 @@ export const dbService = {
         return list.find((c: any) => c.status === 'open') || null;
       }
     },
-    
+
     async openRegister(openedBy: string, balance: number): Promise<CashRegister> {
       const timestamp = new Date().toISOString();
       const payload = {
@@ -708,7 +763,7 @@ export const dbService = {
         if (mErr) throw mErr;
         const { data: prod, error: pErr } = await supabase.from('products').select('stock').eq('id', movement.product_id).single();
         if (pErr) throw pErr;
-        
+
         let newStock = prod.stock;
         if (movement.type === 'Entrada' || movement.type === 'Estorno de Venda') newStock += movement.quantity;
         else if (movement.type === 'Saída manual' || movement.type === 'Venda') newStock = Math.max(0, newStock - movement.quantity);
@@ -721,7 +776,7 @@ export const dbService = {
         const products = JSON.parse(localStorage.getItem(MOCK_KEYS.PRODUCTS) || '[]');
         const idx = products.findIndex((p: any) => p.id === movement.product_id);
         if (idx === -1) throw new Error('Produto não cadastrado');
-        
+
         let newStock = products[idx].stock;
         if (movement.type === 'Entrada' || movement.type === 'Estorno de Venda') newStock += movement.quantity;
         else if (movement.type === 'Saída manual' || movement.type === 'Venda') newStock = Math.max(0, newStock - movement.quantity);
@@ -774,15 +829,18 @@ export const dbService = {
 
     async create(
       saleData: Omit<Sale, 'id' | 'created_at'>,
-      items: Array<Omit<SaleItem, 'id' | 'sale_id'>>
+      items: Array<Omit<SaleItem, 'id' | 'sale_id'>>,
+      installmentDueDates?: string[]
     ): Promise<Sale> {
       const timestamp = new Date().toISOString();
       const currentUserEmail = saleData.user_email;
+      // Garante que installments sempre tem um valor válido (default 1 para pagamentos à vista)
+      const preparedSaleData = { ...saleData, installments: saleData.installments ?? 1 };
 
       if (isSupabaseConfigured && supabase) {
-        const { data: newSale, error: saleErr } = await supabase.from('sales').insert([{ ...saleData, created_at: timestamp }]).select().single();
+        const { data: newSale, error: saleErr } = await supabase.from('sales').insert([{ ...preparedSaleData, created_at: timestamp }]).select().single();
         if (saleErr) throw saleErr;
-        
+
         const saleId = newSale.id;
         const preparedItems = items.map(item => ({ ...item, sale_id: saleId }));
         const { error: itemsErr } = await supabase.from('sale_items').insert(preparedItems);
@@ -799,19 +857,27 @@ export const dbService = {
           });
         }
 
-        // Adjust customer debt if Crediário
-        if (saleData.payment_method === 'Crediário' && saleData.customer_id) {
-          await dbService.customers.adjustDebt(saleData.customer_id, saleData.total_price);
+        // Gera as parcelas (contas a receber) ANTES de mexer na dívida do cliente.
+        // Se o insert de parcelas falhar, a dívida não é alterada — evita inconsistência.
+        if (preparedSaleData.payment_method === 'Boleto') {
+          const plan = generateInstallmentPlan(saleId, preparedSaleData.total_price, preparedSaleData.installments || 1, new Date(timestamp), installmentDueDates);
+          const { error: instErr } = await supabase.from('sale_installments').insert(plan);
+          if (instErr) throw instErr;
         }
 
-        // Adjust Cash movements if not Crediário and cash register session is active
-        if (saleData.payment_method !== 'Crediário' && saleData.cash_register_id) {
+        // Adjust customer debt if Crediário ou Boleto (dinheiro não entra na hora)
+        if (DEFERRED_PAYMENT_METHODS.includes(preparedSaleData.payment_method) && preparedSaleData.customer_id) {
+          await dbService.customers.adjustDebt(preparedSaleData.customer_id, preparedSaleData.total_price);
+        }
+
+        // Adjust Cash movements apenas se for pagamento imediato (não Crediário nem Boleto)
+        if (!DEFERRED_PAYMENT_METHODS.includes(preparedSaleData.payment_method) && preparedSaleData.cash_register_id) {
           await dbService.cash.addMovement({
-            cash_register_id: saleData.cash_register_id,
+            cash_register_id: preparedSaleData.cash_register_id,
             type: 'entrada',
-            amount: saleData.total_price,
+            amount: preparedSaleData.total_price,
             description: `Venda #${saleId.substring(0, 8)}`,
-            payment_method: saleData.payment_method as any
+            payment_method: preparedSaleData.payment_method as any
           });
         }
 
@@ -820,15 +886,15 @@ export const dbService = {
         const salesList = JSON.parse(localStorage.getItem(MOCK_KEYS.SALES) || '[]');
         const saleItemsList = JSON.parse(localStorage.getItem(MOCK_KEYS.SALE_ITEMS) || '[]');
         const newSaleId = 'sale-' + Math.random().toString(36).substring(2, 9);
-        
+
         let cName: string | null = null;
-        if (saleData.customer_id) {
+        if (preparedSaleData.customer_id) {
           const custs = JSON.parse(localStorage.getItem(MOCK_KEYS.CUSTOMERS) || '[]');
-          cName = custs.find((c: any) => c.id === saleData.customer_id)?.name || null;
+          cName = custs.find((c: any) => c.id === preparedSaleData.customer_id)?.name || null;
         }
 
         const newSale: Sale = {
-          ...saleData,
+          ...preparedSaleData,
           id: newSaleId,
           customer_name: cName,
           created_at: timestamp
@@ -855,19 +921,29 @@ export const dbService = {
           });
         }
 
-        // Adjust Debt
-        if (saleData.payment_method === 'Crediário' && saleData.customer_id) {
-          await dbService.customers.adjustDebt(saleData.customer_id, saleData.total_price);
+        // Gera as parcelas (contas a receber) ANTES de mexer na dívida do cliente.
+        // Se algo falhar aqui, a dívida não é alterada — evita inconsistência.
+        if (preparedSaleData.payment_method === 'Boleto') {
+          const plan = generateInstallmentPlan(newSaleId, preparedSaleData.total_price, preparedSaleData.installments || 1, new Date(timestamp), installmentDueDates);
+          const instList = JSON.parse(localStorage.getItem(MOCK_KEYS.SALE_INSTALLMENTS) || '[]');
+          const newInstallments = plan.map(inst => ({ ...inst, id: 'inst-' + Math.random().toString(36).substring(2, 9) }));
+          instList.push(...newInstallments);
+          localStorage.setItem(MOCK_KEYS.SALE_INSTALLMENTS, JSON.stringify(instList));
         }
 
-        // Adjust Cash movements
-        if (saleData.payment_method !== 'Crediário' && saleData.cash_register_id) {
+        // Adjust Debt (Crediário ou Boleto)
+        if (DEFERRED_PAYMENT_METHODS.includes(preparedSaleData.payment_method) && preparedSaleData.customer_id) {
+          await dbService.customers.adjustDebt(preparedSaleData.customer_id, preparedSaleData.total_price);
+        }
+
+        // Adjust Cash movements (apenas pagamento imediato)
+        if (!DEFERRED_PAYMENT_METHODS.includes(preparedSaleData.payment_method) && preparedSaleData.cash_register_id) {
           await dbService.cash.addMovement({
-            cash_register_id: saleData.cash_register_id,
+            cash_register_id: preparedSaleData.cash_register_id,
             type: 'entrada',
-            amount: saleData.total_price,
+            amount: preparedSaleData.total_price,
             description: `Venda #${newSaleId.substring(0, 8)}`,
-            payment_method: saleData.payment_method as any
+            payment_method: preparedSaleData.payment_method as any
           });
         }
 
@@ -896,13 +972,13 @@ export const dbService = {
           });
         }
 
-        // Debt adjustment
-        if (sale.payment_method === 'Crediário' && sale.customer_id) {
+        // Debt adjustment (Crediário ou Boleto)
+        if (DEFERRED_PAYMENT_METHODS.includes(sale.payment_method) && sale.customer_id) {
           await dbService.customers.adjustDebt(sale.customer_id, -sale.total_price);
         }
 
-        // Cash flow removal
-        if (sale.payment_method !== 'Crediário' && sale.cash_register_id) {
+        // Cash flow removal (apenas pagamento imediato)
+        if (!DEFERRED_PAYMENT_METHODS.includes(sale.payment_method) && sale.cash_register_id) {
           await dbService.cash.addMovement({
             cash_register_id: sale.cash_register_id,
             type: 'saida',
@@ -932,13 +1008,13 @@ export const dbService = {
           });
         }
 
-        // Debt adjustment
-        if (sale.payment_method === 'Crediário' && sale.customer_id) {
+        // Debt adjustment (Crediário ou Boleto)
+        if (DEFERRED_PAYMENT_METHODS.includes(sale.payment_method) && sale.customer_id) {
           await dbService.customers.adjustDebt(sale.customer_id, -sale.total_price);
         }
 
-        // Cash flow removal
-        if (sale.payment_method !== 'Crediário' && sale.cash_register_id) {
+        // Cash flow removal (apenas pagamento imediato)
+        if (!DEFERRED_PAYMENT_METHODS.includes(sale.payment_method) && sale.cash_register_id) {
           await dbService.cash.addMovement({
             cash_register_id: sale.cash_register_id,
             type: 'saida',
@@ -949,9 +1025,89 @@ export const dbService = {
         }
 
         localStorage.setItem(MOCK_KEYS.SALES, JSON.stringify(salesList.filter((s: any) => s.id !== id)));
-        
+
         const itemsList = JSON.parse(localStorage.getItem(MOCK_KEYS.SALE_ITEMS) || '[]');
         localStorage.setItem(MOCK_KEYS.SALE_ITEMS, JSON.stringify(itemsList.filter((item: any) => item.sale_id !== id)));
+
+        const instList = JSON.parse(localStorage.getItem(MOCK_KEYS.SALE_INSTALLMENTS) || '[]');
+        localStorage.setItem(MOCK_KEYS.SALE_INSTALLMENTS, JSON.stringify(instList.filter((inst: any) => inst.sale_id !== id)));
+      }
+    }
+  },
+
+  // --- SALE INSTALLMENTS (CONTAS A RECEBER) ---
+  installments: {
+    async getAll(): Promise<SaleInstallment[]> {
+      if (isSupabaseConfigured && supabase) {
+        const { data, error } = await supabase
+          .from('sale_installments')
+          .select('*, sales(customer_id, customers(name))')
+          .order('due_date', { ascending: true });
+        if (error) throw error;
+        return (data || []).map((inst: any) => ({
+          ...inst,
+          customer_id: inst.sales?.customer_id || null,
+          customer_name: inst.sales?.customers?.name || null
+        })) as SaleInstallment[];
+      } else {
+        const list = JSON.parse(localStorage.getItem(MOCK_KEYS.SALE_INSTALLMENTS) || '[]');
+        const sales = JSON.parse(localStorage.getItem(MOCK_KEYS.SALES) || '[]');
+        const customers = JSON.parse(localStorage.getItem(MOCK_KEYS.CUSTOMERS) || '[]');
+        const saleMap = new Map(sales.map((s: any) => [s.id, s]));
+        const custMap = new Map(customers.map((c: any) => [c.id, c.name]));
+
+        return list
+          .map((inst: any) => {
+            const sale = saleMap.get(inst.sale_id) as any;
+            return {
+              ...inst,
+              customer_id: sale?.customer_id || null,
+              customer_name: sale?.customer_id ? custMap.get(sale.customer_id) || null : null
+            };
+          })
+          .sort((a: any, b: any) => a.due_date.localeCompare(b.due_date));
+      }
+    },
+
+    async markAsPaid(
+      installment: SaleInstallment,
+      paidAmount: number,
+      paymentMethod: 'PIX' | 'Cartão' | 'Dinheiro',
+      cashRegisterId: string | null
+    ): Promise<void> {
+      const timestamp = new Date().toISOString();
+      const updateData = {
+        status: 'pago' as const,
+        paid_at: timestamp,
+        paid_amount: paidAmount,
+        payment_method: paymentMethod
+      };
+
+      if (isSupabaseConfigured && supabase) {
+        const { error } = await supabase.from('sale_installments').update(updateData).eq('id', installment.id);
+        if (error) throw error;
+      } else {
+        const list = JSON.parse(localStorage.getItem(MOCK_KEYS.SALE_INSTALLMENTS) || '[]');
+        const idx = list.findIndex((i: any) => i.id === installment.id);
+        if (idx === -1) throw new Error('Parcela não encontrada');
+        list[idx] = { ...list[idx], ...updateData };
+        localStorage.setItem(MOCK_KEYS.SALE_INSTALLMENTS, JSON.stringify(list));
+      }
+
+      // Baixa a dívida do cliente referente a essa parcela
+      if (installment.customer_id) {
+        await dbService.customers.adjustDebt(installment.customer_id, -paidAmount);
+      }
+
+      // Registra a entrada real de dinheiro no caixa (se houver sessão aberta)
+      if (cashRegisterId) {
+        await dbService.cash.addMovement({
+          cash_register_id: cashRegisterId,
+          type: 'entrada',
+          amount: paidAmount,
+          description: `Parcela ${installment.installment_number} - Venda #${installment.sale_id.substring(0, 8)}`,
+          payment_method: paymentMethod
+        });
       }
     }
   },
@@ -967,6 +1123,7 @@ export const dbService = {
       cash_movements: JSON.parse(localStorage.getItem(MOCK_KEYS.CASH_MOVEMENTS) || '[]'),
       sales: JSON.parse(localStorage.getItem(MOCK_KEYS.SALES) || '[]'),
       sale_items: JSON.parse(localStorage.getItem(MOCK_KEYS.SALE_ITEMS) || '[]'),
+      sale_installments: JSON.parse(localStorage.getItem(MOCK_KEYS.SALE_INSTALLMENTS) || '[]'),
       stock_movements: JSON.parse(localStorage.getItem(MOCK_KEYS.STOCK_MOVEMENTS) || '[]'),
       exportedAt: new Date().toISOString()
     };
@@ -991,6 +1148,7 @@ export const dbService = {
         if (data.cash_movements) localStorage.setItem(MOCK_KEYS.CASH_MOVEMENTS, JSON.stringify(data.cash_movements));
         localStorage.setItem(MOCK_KEYS.SALES, JSON.stringify(data.sales));
         if (data.sale_items) localStorage.setItem(MOCK_KEYS.SALE_ITEMS, JSON.stringify(data.sale_items));
+        if (data.sale_installments) localStorage.setItem(MOCK_KEYS.SALE_INSTALLMENTS, JSON.stringify(data.sale_installments));
         if (data.stock_movements) localStorage.setItem(MOCK_KEYS.STOCK_MOVEMENTS, JSON.stringify(data.stock_movements));
         return true;
       }

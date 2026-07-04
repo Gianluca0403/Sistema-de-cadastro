@@ -1,6 +1,7 @@
+
 import React, { useState, useEffect, useCallback } from 'react';
 import { dbService, isSupabaseConfigured } from './supabaseClient';
-import { Product, Customer, Sale, StockMovement, SaleItem } from './types';
+import { Product, Customer, Sale, StockMovement, SaleItem, SaleInstallment } from './types';
 
 // Import Components
 import { Sidebar } from './components/Sidebar';
@@ -12,6 +13,7 @@ import { ClientsView } from './components/ClientsView';
 import { MovementsView } from './components/MovementsView';
 import { SettingsView } from './components/SettingsView';
 import { LoginView } from './components/LoginView';
+import { ReceivablesView } from './components/ReceivablesView';
 
 const App: React.FC = () => {
   const [userEmail, setUserEmail] = useState<string | null>(null);
@@ -23,6 +25,8 @@ const App: React.FC = () => {
   const [clients, setClients] = useState<Customer[]>([]);
   const [sales, setSales] = useState<Sale[]>([]);
   const [movements, setMovements] = useState<StockMovement[]>([]);
+  const [installments, setInstallments] = useState<SaleInstallment[]>([]);
+  const [activeCashRegisterId, setActiveCashRegisterId] = useState<string | null>(null);
 
   // Connectivity type
   const dbType = isSupabaseConfigured ? 'Supabase' : 'Mock LocalStorage';
@@ -41,17 +45,21 @@ const App: React.FC = () => {
         return;
       }
 
-      const [prods, clis, transactions, logs] = await Promise.all([
+      const [prods, clis, transactions, logs, installmentsList, activeSession] = await Promise.all([
         dbService.products.getAll(),
         dbService.customers.getAll(),
         dbService.sales.getAll(),
         dbService.movements.getAll(),
+        dbService.installments.getAll(),
+        dbService.cash.getActiveSession(),
       ]);
 
       setProducts(prods);
       setClients(clis);
       setSales(transactions);
       setMovements(logs);
+      setInstallments(installmentsList);
+      setActiveCashRegisterId(activeSession?.id || null);
     } catch (error) {
       console.error('Error fetching system data:', error);
     }
@@ -146,6 +154,7 @@ const App: React.FC = () => {
       total_price: amount,
       discount: 0,
       payment_method: paymentMethod as any,
+      installments: 1,
       customer_id: client.id,
       user_email: userEmail || 'sistema@jaja.com'
     }, []);
@@ -160,7 +169,9 @@ const App: React.FC = () => {
     saleData: {
       total_price: number;
       discount: number;
-      payment_method: 'PIX' | 'Cartão' | 'Dinheiro' | 'Crediário';
+      payment_method: 'PIX' | 'Cartão' | 'Dinheiro' | 'Crediário' | 'Boleto';
+      installments?: number | null;
+      due_dates?: string[] | null;
       customer_id: string | null;
     },
     items: Array<{
@@ -170,15 +181,26 @@ const App: React.FC = () => {
       cost_price: number;
     }>
   ) => {
+    const { due_dates, ...restSaleData } = saleData;
     await dbService.sales.create({
-      ...saleData,
+      ...restSaleData,
+      installments: restSaleData.installments ?? 1,
       user_email: userEmail || 'sistema@jaja.com'
-    }, items);
+    }, items, due_dates || undefined);
     await refreshAllData();
   };
 
   const handleGetSaleItems = async (saleId: string): Promise<SaleItem[]> => {
     return await dbService.sales.getItems(saleId);
+  };
+
+  const handleMarkInstallmentAsPaid = async (
+    installment: SaleInstallment,
+    paidAmount: number,
+    paymentMethod: 'PIX' | 'Cartão' | 'Dinheiro'
+  ) => {
+    await dbService.installments.markAsPaid(installment, paidAmount, paymentMethod, activeCashRegisterId);
+    await refreshAllData();
   };
 
   const handleDeleteSale = async (saleId: string) => {
@@ -238,6 +260,10 @@ const App: React.FC = () => {
   }
 
   return (
+
+
+
+
     <div id="app-layout">
       <Sidebar
         currentView={currentView}
@@ -263,7 +289,6 @@ const App: React.FC = () => {
               onNavigateToPDV={handleQuickSaleTrigger}
             />
           )}
-
           {currentView === 'estoque' && (
             <ProductsView
               products={products}
@@ -300,6 +325,14 @@ const App: React.FC = () => {
               sales={sales}
               onGetSaleItems={handleGetSaleItems}
               onDeleteSale={handleDeleteSale}
+            />
+          )}
+
+          {currentView === 'recebiveis' && (
+            <ReceivablesView
+              installments={installments}
+              hasOpenCashRegister={!!activeCashRegisterId}
+              onMarkAsPaid={handleMarkInstallmentAsPaid}
             />
           )}
 

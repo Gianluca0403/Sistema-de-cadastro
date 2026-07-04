@@ -43,7 +43,7 @@ export const MovementsView: React.FC<MovementsViewProps> = ({
   // Filtered Sales
   const filteredSales = useMemo(() => {
     return sales.filter(s => {
-      const clientName = s.client_name || 'Consumidor Final';
+      const clientName = s.customer_name || 'Consumidor Final';
       const matchesSearch = 
         clientName.toLowerCase().includes(salesSearch.toLowerCase()) ||
         s.payment_method.toLowerCase().includes(salesSearch.toLowerCase()) ||
@@ -198,7 +198,7 @@ export const MovementsView: React.FC<MovementsViewProps> = ({
                           #{s.id.substring(0, 8)}
                         </td>
                         <td>
-                          {s.client_name || <span style={{ color: 'var(--text-muted)' }}>Consumidor Final</span>}
+                          {s.customer_name || <span style={{ color: 'var(--text-muted)' }}>Consumidor Final</span>}
                         </td>
                         <td>
                           <span style={{ 
@@ -350,7 +350,7 @@ export const MovementsView: React.FC<MovementsViewProps> = ({
                 </div>
                 <div>
                   <span style={{ color: 'var(--text-muted)', display: 'block' }}>Cliente:</span>
-                  <span style={{ fontWeight: 600 }}>{selectedSale.client_name || 'Consumidor Final'}</span>
+                  <span style={{ fontWeight: 600 }}>{selectedSale.customer_name || 'Consumidor Final'}</span>
                 </div>
                 <div>
                   <span style={{ color: 'var(--text-muted)', display: 'block' }}>Forma de Pagamento:</span>
