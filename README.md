@@ -1,6 +1,6 @@
 # Sistema de Gestão MMC Imports
 
-Este é um sistema web moderno e completo para gestão de estoque, vendas (PDV rápido) e clientes (controle de crediário/fiado) desenvolvido para a **JAJA Cosméticos**. 
+Este é um sistema web moderno e completo para gestão de estoque, vendas (PDV rápido) e clientes (controle de crediário/fiado) desenvolvido para a **MMC Cosmeticos**. 
 
 O projeto foi construído sob a arquitetura **JAMstack**, sendo 100% serverless, sem backend tradicional, hospedável gratuitamente na **Netlify** e utilizando o **Supabase** como banco de dados em tempo real, autenticação e armazenamento de imagens.
 
