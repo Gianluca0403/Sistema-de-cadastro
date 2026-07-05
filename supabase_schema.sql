@@ -125,6 +125,7 @@ CREATE TABLE IF NOT EXISTS public.sale_installments (
     sale_id UUID NOT NULL REFERENCES public.sales(id) ON DELETE CASCADE,
     installment_number INTEGER NOT NULL DEFAULT 1 CHECK (installment_number >= 1),
     amount NUMERIC(10, 2) NOT NULL CHECK (amount > 0),
+    status TEXT,
     due_date TEXT,
     paid_at TEXT,
     paid_amount NUMERIC,

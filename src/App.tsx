@@ -156,7 +156,8 @@ const App: React.FC = () => {
       payment_method: paymentMethod as any,
       installments: 1,
       customer_id: client.id,
-      user_email: userEmail || 'sistema@jaja.com'
+      user_email: userEmail || 'sistema@jaja.com',
+      cash_register_id: ""
     }, []);
 
     await refreshAllData();

@@ -232,17 +232,6 @@ export const ClientsView: React.FC<ClientsViewProps> = ({
                     </td>
                     <td style={{ textAlign: 'center' }}>
                       <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
-                        {/* Pay debt button */}
-                        {c.debt > 0 && (
-                          <button 
-                            className="btn btn-primary" 
-                            onClick={() => handleOpenPayModal(c)}
-                            title="Receber Pagamento do Crediário"
-                            style={{ padding: '6px 10px', fontSize: '12px', background: 'var(--success)', border: 'none' }}
-                          >
-                            <i className="fa-solid fa-hand-holding-dollar"></i> Receber
-                          </button>
-                        )}
                         
                         {/* Edit button */}
                         <button 

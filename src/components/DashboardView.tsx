@@ -1,11 +1,11 @@
 import React, { useMemo } from 'react';
-import { Product, Sale, Client } from '../types';
+import { Product, Sale, Customer } from '../types';
 import { DEFAULT_CATEGORY_IMAGES } from '../supabaseClient';
 
 interface DashboardViewProps {
   products: Product[];
   sales: Sale[];
-  clients: Client[];
+  clients: Customer[];
   onNavigateToStock: () => void;
   onNavigateToPDV: () => void;
 }
@@ -123,7 +123,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             const prod = products.find(p => p.id === item.product_id);
             productQtyMap[item.product_id] = {
               name: item.product_name || prod?.name || 'Produto Removido',
-              category: prod?.category || 'Outros',
+              category: prod?.category_name || 'Outros',
               qty: 0,
               totalSales: 0
             };
