@@ -54,7 +54,6 @@ const getMockCategories = (): Category[] => {
 
 // Initialize Mock database
 const initMockDatabase = () => {
-  const categories = getMockCategories();
 
   if (!localStorage.getItem(MOCK_KEYS.PRODUCTS)) {
     const products: Product[] = [
@@ -376,7 +375,10 @@ export const dbService = {
     async getAll(): Promise<Product[]> {
       if (isSupabaseConfigured && supabase) {
         const { data, error } = await supabase.from('products').select('*, categories(name)').order('name', { ascending: true });
-        if (error) throw error;
+        if (error){
+          console.log("Erro ao consultar os produtos");
+          throw error;
+        }
         return (data || []).map((p: any) => ({
           ...p,
           category_name: p.categories?.name || 'Sem categoria'
@@ -554,7 +556,10 @@ export const dbService = {
     async getAll(): Promise<Customer[]> {
       if (isSupabaseConfigured && supabase) {
         const { data, error } = await supabase.from('customers').select('*').order('name', { ascending: true });
-        if (error) throw error;
+        if (error){
+          console.log("Erro ao consultar os clientes")
+          throw error;
+        } 
         return data as Customer[];
       } else {
         return JSON.parse(localStorage.getItem(MOCK_KEYS.CUSTOMERS) || '[]');
@@ -746,7 +751,10 @@ export const dbService = {
     async getAll(): Promise<StockMovement[]> {
       if (isSupabaseConfigured && supabase) {
         const { data, error } = await supabase.from('stock_movements').select('*, products(name)').order('created_at', { ascending: false });
-        if (error) throw error;
+         if (error){
+          console.log("Erro ao consultar os movimentos")
+          throw error;
+        } 
         return (data || []).map((m: any) => ({ ...m, product_name: m.products?.name || 'Produto Removido' })) as StockMovement[];
       } else {
         const list = JSON.parse(localStorage.getItem(MOCK_KEYS.STOCK_MOVEMENTS) || '[]');
@@ -804,7 +812,10 @@ export const dbService = {
     async getAll(): Promise<Sale[]> {
       if (isSupabaseConfigured && supabase) {
         const { data, error } = await supabase.from('sales').select('*, customers(name)').order('created_at', { ascending: false });
-        if (error) throw error;
+         if (error){
+          console.log("Erro ao consultar os vendas")
+          throw error;
+        } 
         return (data || []).map((s: any) => ({ ...s, customer_name: s.customers?.name || null })) as Sale[];
       } else {
         const sales = JSON.parse(localStorage.getItem(MOCK_KEYS.SALES) || '[]');
