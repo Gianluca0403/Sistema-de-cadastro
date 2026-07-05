@@ -19,6 +19,8 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({
   onMarkAsPaid
 }) => {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('todos');
+  const [customerFilter, setCustomerFilter] = useState<string>('todos');
+  const [searchQuery, setSearchQuery] = useState('');
   const [payingId, setPayingId] = useState<string | null>(null);
   const [paymentMethod, setPaymentMethod] = useState<'PIX' | 'Cartão' | 'Dinheiro'>('PIX');
   const [loading, setLoading] = useState(false);
@@ -41,11 +43,27 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({
     }));
   }, [installments]);
 
-  const filteredInstallments = useMemo(() => {
-    if (statusFilter === 'todos') return enrichedInstallments;
-    return enrichedInstallments.filter(inst => inst.displayStatus === statusFilter);
-  }, [enrichedInstallments, statusFilter]);
+  // Lista única de clientes que possuem parcelas, para popular o filtro dropdown
+  const customerOptions = useMemo(() => {
+    const namesSet = new Set<string>();
+    enrichedInstallments.forEach(inst => {
+      if (inst.customer_name) namesSet.add(inst.customer_name);
+    });
+    return Array.from(namesSet).sort((a, b) => a.localeCompare(b));
+  }, [enrichedInstallments]);
 
+  const filteredInstallments = useMemo(() => {
+    return enrichedInstallments.filter(inst => {
+      const matchesStatus = statusFilter === 'todos' || inst.displayStatus === statusFilter;
+      const matchesCustomerSelect = customerFilter === 'todos' || inst.customer_name === customerFilter;
+      const matchesSearch = searchQuery.trim() === '' ||
+        (inst.customer_name || '').toLowerCase().includes(searchQuery.trim().toLowerCase());
+
+      return matchesStatus && matchesCustomerSelect && matchesSearch;
+    });
+  }, [enrichedInstallments, statusFilter, customerFilter, searchQuery]);
+
+  // Resumo sempre reflete o total geral (não filtrado por cliente), para dar visão completa do caixa
   const summary = useMemo(() => {
     const pendente = enrichedInstallments.filter(i => i.displayStatus === 'pendente').reduce((sum, i) => sum + i.amount, 0);
     const atrasado = enrichedInstallments.filter(i => i.displayStatus === 'atrasado').reduce((sum, i) => sum + i.amount, 0);
@@ -75,6 +93,14 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({
       setLoading(false);
     }
   };
+
+  const clearFilters = () => {
+    setStatusFilter('todos');
+    setCustomerFilter('todos');
+    setSearchQuery('');
+  };
+
+  const hasActiveFilters = statusFilter !== 'todos' || customerFilter !== 'todos' || searchQuery.trim() !== '';
 
   return (
     <section id="view-receivables" className="app-view">
@@ -108,7 +134,45 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({
         </div>
       )}
 
-      {/* Filter Tabs */}
+      {/* Filters Bar: busca por nome + dropdown de cliente + status */}
+      <div className="card" style={{ padding: '14px', marginBottom: '16px', display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
+        <div className="search-input-wrapper" style={{ flex: '1 1 220px', margin: 0 }}>
+          <i className="fa-solid fa-magnifying-glass"></i>
+          <input
+            type="text"
+            className="form-control"
+            placeholder="Buscar por nome do cliente..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
+        </div>
+
+        <select
+          className="form-control"
+          style={{ flex: '0 1 220px' }}
+          value={customerFilter}
+          onChange={(e) => setCustomerFilter(e.target.value)}
+        >
+          <option value="todos">Todos os Clientes</option>
+          {customerOptions.map(name => (
+            <option key={name} value={name}>{name}</option>
+          ))}
+        </select>
+
+        {hasActiveFilters && (
+          <button
+            type="button"
+            className="btn"
+            style={{ background: 'rgba(255,255,255,0.05)', fontSize: '12px', padding: '6px 14px' }}
+            onClick={clearFilters}
+          >
+            <i className="fa-solid fa-xmark" style={{ marginRight: '6px' }}></i>
+            Limpar Filtros
+          </button>
+        )}
+      </div>
+
+      {/* Filter Tabs (status) */}
       <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
         {(['todos', 'pendente', 'atrasado', 'pago'] as StatusFilter[]).map(status => (
           <button
