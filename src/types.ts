@@ -102,3 +102,19 @@ export interface StockMovement {
   created_at: string;
   product_name?: string;
 }
+
+// Parcela de uma venda no Boleto (Contas a Receber)
+export interface SaleInstallment {
+  id: string;
+  sale_id: string;
+  installment_number: number;
+  amount: number;
+  due_date: string; // YYYY-MM-DD
+  status: 'pendente' | 'pago' | 'atrasado';
+  paid_at: string | null;
+  paid_amount: number | null;
+  payment_method: 'PIX' | 'Cartão' | 'Dinheiro' | null;
+  created_at?: string;
+  customer_name?: string | null; // resolved locally
+  customer_id?: string | null; // resolved locally
+}
