@@ -1054,7 +1054,10 @@ export const dbService = {
           .from('sale_installments')
           .select('*, sales(customer_id, customers(name))')
           .order('due_date', { ascending: true });
-        if (error) throw error;
+         if (error){
+          console.log("Erro ao consultar os installments")
+          throw error;
+        } 
         return (data || []).map((inst: any) => ({
           ...inst,
           customer_id: inst.sales?.customer_id || null,
