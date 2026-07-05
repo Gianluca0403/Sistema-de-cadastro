@@ -1051,7 +1051,7 @@ export const dbService = {
     async getAll(): Promise<SaleInstallment[]> {
       if (isSupabaseConfigured && supabase) {
         const { data, error } = await supabase
-          .from('sales')
+          .from('sale_installments')
           .select('*, sales(customer_id, customers(name))')
           .order('due_date', { ascending: true });
          if (error){

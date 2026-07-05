@@ -118,6 +118,23 @@ CREATE TABLE IF NOT EXISTS public.stock_movements (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
+
+-- 10. Tabela de Parcelas (Sale_Installmenets)
+CREATE TABLE IF NOT EXISTS public.sale_installments (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    sale_id UUID NOT NULL REFERENCES public.sales(id) ON DELETE CASCADE,
+    installment_number INTEGER NOT NULL DEFAULT 1 CHECK (installment_number >= 1),
+    amount NUMERIC(10, 2) NOT NULL CHECK (amount > 0),
+    due_date TEXT,
+    paid_at TEXT,
+    paid_amount NUMERIC,
+    payment_method TEXT,
+    created_at TEXT,
+    customer_name TEXT,
+    customer_id TEXT
+);
+
+
 -- ==========================================================================
 -- INDEXADORES DE DESEMPENHO (INDEXES)
 -- ==========================================================================
