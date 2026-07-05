@@ -85,11 +85,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     let lowStockItemsCount = 0;
     let totalInventoryCost = 0;
     let totalInventoryValue = 0;
+    let totalInventoryValueRetail = 0;
 
     products.forEach(p => {
       const qty = Number(p.stock) || 0;
       totalInventoryCost += qty * (Number(p.cost_price) || 0);
       totalInventoryValue += qty * (Number(p.wholesale_price) || 0);
+      totalInventoryValueRetail += qty * (Number(p.retail_price) || 0);
       if (qty <= (Number(p.min_stock) || 0)) {
         lowStockItemsCount++;
       }
@@ -103,6 +105,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       totalReceivablesPending,
       totalInventoryCost,
       totalInventoryValue,
+      totalInventoryValueRetail,
       lowStockItemsCount,
       totalProductsCount: products.length
     };
@@ -412,6 +415,16 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </h4>
           </div>
           <i className="fa-solid fa-hand-holding-dollar" style={{ fontSize: '24px', color: 'var(--text-muted)', opacity: 0.3 }}></i>
+        </div>
+
+        <div className="card" style={{ padding: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Valor de Venda no Varejo</span>
+            <h4 style={{ fontSize: '18px', fontWeight: 700, marginTop: '4px', color: 'var(--secondary)' }}>
+              {formatCurrency(metrics.totalInventoryValueRetail)}
+            </h4>
+          </div>
+          <i className="fa-solid fa-store" style={{ fontSize: '24px', color: 'var(--text-muted)', opacity: 0.3 }}></i>
         </div>
 
         <div className="card" style={{ padding: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>

@@ -26,6 +26,156 @@ interface CartItem {
   priceType: 'retail' | 'wholesale';
 }
 
+<<<<<<< Updated upstream
+=======
+const gerarLinkWhatsApp = (cart: CartItem[], total: number, telefoneCliente: string) => {
+  let texto = `COMPROVANTE DE VENDA\n`;
+  texto += `-----------------------------------\n`;
+
+  cart.forEach((item) => {
+    const preco = item.priceType === 'retail' ? item.product.retail_price : item.product.wholesale_price;
+    texto += `▪ ${item.quantity}x ${item.product.name} - R$ ${preco.toFixed(2)}\n`;
+  });
+
+  texto += `-----------------------------------\n`;
+  texto += `Total Pago: R$ ${total.toFixed(2)}\n\n`;
+  texto += `Obrigado pela preferência! Volte sempre. 🤝`;
+
+  const textoCodificado = encodeURIComponent(texto);
+  
+  // Limpa o telefone (remove parênteses, traços e espaços)
+  let telefoneLimpo = telefoneCliente.replace(/\D/g, '');
+  if (!telefoneLimpo.startsWith('55')) {
+    telefoneLimpo = `55${telefoneLimpo}`;
+  }
+
+  return `https://wa.me/${telefoneLimpo}?text=${textoCodificado}`;
+};
+
+// Formata uma data YYYY-MM-DD para DD/MM/YYYY
+const formatDateBR = (isoDate: string) => {
+  const [year, month, day] = isoDate.split('-');
+  return `${day}/${month}/${year}`;
+};
+
+// Abre uma janela de impressão com o comprovante da venda (estilo cupom)
+const imprimirComprovante = (
+  cart: CartItem[],
+  totals: { subtotal: number; discountValue: number; total: number },
+  paymentMethod: string,
+  installments: number | null,
+  dueDates: string[],
+  cliente: Customer | undefined
+) => {
+  const formatCurrency = (val: number) =>
+    new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
+
+  const dataVenda = new Date().toLocaleString('pt-BR');
+
+  const itensHtml = cart.map(item => {
+    const preco = item.priceType === 'retail' ? item.product.retail_price : item.product.wholesale_price;
+    const subtotal = preco * item.quantity;
+    return `
+      <tr>
+        <td style="padding:3px 0;">${item.quantity}x ${item.product.name}</td>
+        <td style="padding:3px 0; text-align:right; white-space:nowrap;">${formatCurrency(subtotal)}</td>
+      </tr>`;
+  }).join('');
+
+  const parcelasHtml = paymentMethod === 'Boleto' && dueDates.length > 0
+    ? `
+      <div class="linha"></div>
+      <div style="font-weight:bold; margin-bottom:4px;">Parcelas (${installments}x):</div>
+      ${dueDates.map((d, i) => `<div>Parcela ${i + 1}: vencimento ${d ? formatDateBR(d) : '-'}</div>`).join('')}
+    `
+    : '';
+
+  // Tamanho maior para a janela de impressão, centralizada na tela
+  const printWidth = 700;
+  const printHeight = 900;
+  const left = Math.max(0, (window.screen.width - printWidth) / 2);
+  const top = Math.max(0, (window.screen.height - printHeight) / 2);
+
+  const printWindow = window.open(
+    '',
+    '_blank',
+    `width=${printWidth},height=${printHeight},left=${left},top=${top}`
+  );
+  if (!printWindow) {
+    alert('Não foi possível abrir a janela de impressão. Verifique se o navegador está bloqueando pop-ups.');
+    return;
+  }
+
+  printWindow.document.write(`
+    <html>
+      <head>
+        <title>Comprovante de Venda</title>
+        <meta charset="UTF-8" />
+        <style>
+          * { box-sizing: border-box; }
+          body {
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 12px;
+            color: #000;
+            padding: 16px;
+            max-width: 320px;
+            margin: 0 auto;
+          }
+          h2 { text-align: center; margin: 0 0 2px 0; font-size: 16px; }
+          .subtitulo { text-align: center; font-size: 11px; margin-bottom: 8px; }
+          .linha { border-top: 1px dashed #000; margin: 8px 0; }
+          table { width: 100%; border-collapse: collapse; }
+          .total-row { font-weight: bold; font-size: 14px; display: flex; justify-content: space-between; margin-top: 4px; }
+          .footer { text-align: center; margin-top: 14px; font-size: 11px; }
+          @media print {
+            body { padding: 0; }
+          }
+        </style>
+      </head>
+      <body>
+        <h2>MMC Comesticos</h2>
+        <div class="subtitulo">Comprovante de Venda</div>
+        <div class="linha"></div>
+        <div>Data: ${dataVenda}</div>
+        ${cliente ? `<div>Cliente: ${cliente.name}</div>` : ''}
+        <div>Pagamento: ${paymentMethod}${paymentMethod === 'Boleto' && installments ? ` (${installments}x)` : ''}</div>
+        <div class="linha"></div>
+        <table>
+          <tbody>
+            ${itensHtml}
+          </tbody>
+        </table>
+        <div class="linha"></div>
+        <div style="display:flex; justify-content:space-between;">
+          <span>Subtotal:</span>
+          <span>${formatCurrency(totals.subtotal)}</span>
+        </div>
+        ${totals.discountValue > 0 ? `
+          <div style="display:flex; justify-content:space-between;">
+            <span>Desconto:</span>
+            <span>-${formatCurrency(totals.discountValue)}</span>
+          </div>` : ''}
+        <div class="total-row">
+          <span>Total:</span>
+          <span>${formatCurrency(totals.total)}</span>
+        </div>
+        ${parcelasHtml}
+        <div class="linha"></div>
+        <div class="footer">Obrigado pela preferência!<br/>Volte sempre. 🤝</div>
+      </body>
+    </html>
+  `);
+
+  printWindow.document.close();
+  printWindow.focus();
+
+  // Pequeno delay para garantir que o conteúdo renderizou antes de abrir o diálogo de impressão
+  setTimeout(() => {
+    printWindow.print();
+  }, 300);
+};
+
+>>>>>>> Stashed changes
 export const PDVView: React.FC<PDVViewProps> = ({
   products,
   clients,
@@ -49,6 +199,18 @@ export const PDVView: React.FC<PDVViewProps> = ({
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
   const searchInputRef = useRef<HTMLInputElement>(null);
+
+  // Snapshot da última venda concluída, usado para mostrar o modal de
+  // "Enviar WhatsApp" / "Imprimir Comprovante" sem depender do carrinho (que já foi limpo)
+  const [postSaleReceipt, setPostSaleReceipt] = useState<{
+    cart: CartItem[];
+    totals: { subtotal: number; discountValue: number; total: number };
+    paymentMethod: 'PIX' | 'Cartão' | 'Dinheiro' | 'Boleto';
+    installments: number | null;
+    dueDates: string[];
+    cliente: Customer | undefined;
+    whatsappLink: string | null;
+  } | null>(null);
 
   // Auto-focus search input on load
   useEffect(() => {
@@ -228,6 +390,28 @@ export const PDVView: React.FC<PDVViewProps> = ({
       }, saleItemsPayload);
 
       showSuccessToast('Venda registrada com sucesso!');
+<<<<<<< Updated upstream
+=======
+
+      // Guarda um "retrato" da venda antes de limpar o carrinho, para alimentar
+      // o modal de pós-venda (Enviar WhatsApp / Imprimir Comprovante)
+      const cliente = clients.find(c => c.id === selectedClientId);
+      const telefoneDoCliente = (cliente as any)?.phone || (cliente as any)?.telefone;
+      const whatsappLink = (cliente && telefoneDoCliente)
+        ? gerarLinkWhatsApp(cart, totals.total, telefoneDoCliente)
+        : null;
+
+      setPostSaleReceipt({
+        cart: [...cart],
+        totals: { ...totals },
+        paymentMethod,
+        installments: paymentMethod === 'Boleto' ? installments : null,
+        dueDates: dueDates.slice(0, installments),
+        cliente,
+        whatsappLink
+      });
+
+>>>>>>> Stashed changes
       clearCart();
     } catch (err: any) {
       console.error(err);
@@ -253,6 +437,65 @@ export const PDVView: React.FC<PDVViewProps> = ({
       {successMsg && (
         <div className="toast toast-success show" style={{ position: 'fixed', top: '20px', right: '20px', zIndex: 9999 }}>
           <i className="fa-solid fa-circle-check"></i> <span>{successMsg}</span>
+        </div>
+      )}
+
+      {/* Modal de Pós-Venda: Enviar WhatsApp / Imprimir Comprovante */}
+      {postSaleReceipt && (
+        <div
+          style={{
+            position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+            background: 'rgba(0,0,0,0.6)', zIndex: 10000,
+            display: 'flex', alignItems: 'center', justifyContent: 'center'
+          }}
+        >
+          <div className="card" style={{ maxWidth: '360px', width: '90%', padding: '24px', textAlign: 'center' }}>
+            <i className="fa-solid fa-circle-check" style={{ fontSize: '32px', color: 'var(--success)', marginBottom: '10px' }}></i>
+            <h3 style={{ fontSize: '16px', marginBottom: '6px' }}>Venda concluída!</h3>
+            <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '20px' }}>
+              Deseja enviar o comprovante ou imprimir?
+            </p>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              {postSaleReceipt.whatsappLink && (
+                <button
+                  type="button"
+                  className="btn"
+                  style={{ padding: '10px', fontSize: '13px', background: '#25D366', color: '#fff', fontWeight: 'bold' }}
+                  onClick={() => window.open(postSaleReceipt.whatsappLink!, '_blank')}
+                >
+                  <i className="fa-brands fa-whatsapp" style={{ marginRight: '8px' }}></i>
+                  Enviar no WhatsApp
+                </button>
+              )}
+
+              <button
+                type="button"
+                className="btn btn-primary"
+                style={{ padding: '10px', fontSize: '13px', fontWeight: 'bold' }}
+                onClick={() => imprimirComprovante(
+                  postSaleReceipt.cart,
+                  postSaleReceipt.totals,
+                  postSaleReceipt.paymentMethod,
+                  postSaleReceipt.installments,
+                  postSaleReceipt.dueDates,
+                  postSaleReceipt.cliente
+                )}
+              >
+                <i className="fa-solid fa-print" style={{ marginRight: '8px' }}></i>
+                Imprimir Comprovante
+              </button>
+
+              <button
+                type="button"
+                className="btn"
+                style={{ padding: '10px', fontSize: '13px', background: 'rgba(255,255,255,0.05)' }}
+                onClick={() => setPostSaleReceipt(null)}
+              >
+                Fechar
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
