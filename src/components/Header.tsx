@@ -17,7 +17,7 @@ export const Header: React.FC<HeaderProps> = ({ currentView, userEmail, onLogout
       movimentacoes: { t: 'Movimentações de Estoque', s: 'Histórico completo de entradas e saídas' },
       configuracoes: { t: 'Ajustes & Backup', s: 'Configurações do sistema e segurança' }
     };
-    return titles[view] || { t: 'Sistema JAJA', s: 'Painel de Controle' };
+    return titles[view] || { t: 'MMC Imports', s: 'Painel de Controle' };
   };
 
   const { t: title, s: subtitle } = getTitles(currentView);

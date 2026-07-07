@@ -132,7 +132,7 @@ const imprimirComprovante = (
         </style>
       </head>
       <body>
-        <h2>JAJA Cosméticos</h2>
+        <h2>MMC Imports</h2>
         <div class="subtitulo">Comprovante de Venda</div>
         <div class="linha"></div>
         <div>Data: ${dataVenda}</div>

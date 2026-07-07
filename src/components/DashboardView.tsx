@@ -1,11 +1,11 @@
 import React, { useMemo } from 'react';
-import { Product, Sale, Customer } from '../types';
+import { Product, Sale, Client } from '../types';
 import { DEFAULT_CATEGORY_IMAGES } from '../supabaseClient';
 
 interface DashboardViewProps {
   products: Product[];
   sales: Sale[];
-  clients: Customer[];
+  clients: Client[];
   onNavigateToStock: () => void;
   onNavigateToPDV: () => void;
 }
@@ -107,7 +107,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       totalInventoryValue,
       totalInventoryValueRetail,
       lowStockItemsCount,
-      totalProductsCount: products.length
+      totalProductsCount: products.length,
+      totalStockUnits: products.reduce((sum, p) => sum + (Number(p.stock) || 0), 0)
     };
   }, [products, sales, clients]);
 
@@ -123,7 +124,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             const prod = products.find(p => p.id === item.product_id);
             productQtyMap[item.product_id] = {
               name: item.product_name || prod?.name || 'Produto Removido',
-              category: prod?.category_name || 'Outros',
+              category: prod?.category || 'Outros',
               qty: 0,
               totalSales: 0
             };
@@ -439,10 +440,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
         <div className="card" style={{ padding: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
-            <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Catálogo de Produtos</span>
+            <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Total em Estoque (Unidades)</span>
             <h4 style={{ fontSize: '18px', fontWeight: 700, marginTop: '4px' }}>
-              {metrics.totalProductsCount} itens
+              {metrics.totalStockUnits} unidades
             </h4>
+            <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+              {metrics.totalProductsCount} produtos cadastrados
+            </span>
           </div>
           <i className="fa-solid fa-box" style={{ fontSize: '24px', color: 'var(--text-muted)', opacity: 0.3 }}></i>
         </div>

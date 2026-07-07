@@ -108,7 +108,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
           </div>
           
           <h2 style={{ fontFamily: "'Outfit', sans-serif", fontSize: '26px', fontWeight: 800, letterSpacing: '-0.5px' }}>
-            JAJA Cosméticos
+            MMC Imports
           </h2>
           <p style={{ color: 'var(--text-muted)', fontSize: '13px', marginTop: '6px' }}>
             {isRegistering ? 'Crie seu cadastro administrativo' : 'Faça login para gerenciar estoque & vendas'}

@@ -19,6 +19,91 @@ const CATEGORY_OPTIONS = [
   { id: '39263b3d-a23f-4599-a685-eab7c5d2fdc8', name: 'Outros' },
 ];
 
+// Abre uma janela de impressão com a lista de estoque (apenas nome e quantidade)
+const imprimirEstoque = (produtos: Product[]) => {
+  const dataImpressao = new Date().toLocaleString('pt-BR');
+  const totalUnidades = produtos.reduce((sum, p) => sum + (Number(p.stock) || 0), 0);
+
+  const linhasHtml = produtos
+    .slice()
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .map(p => `
+      <tr>
+        <td style="padding:6px 8px; border-bottom:1px solid #ddd;">${p.name}</td>
+        <td style="padding:6px 8px; border-bottom:1px solid #ddd; text-align:right; font-weight:bold;">${p.stock}</td>
+      </tr>`)
+    .join('');
+
+  const printWidth = 700;
+  const printHeight = 900;
+  const left = Math.max(0, (window.screen.width - printWidth) / 2);
+  const top = Math.max(0, (window.screen.height - printHeight) / 2);
+
+  const printWindow = window.open(
+    '',
+    '_blank',
+    `width=${printWidth},height=${printHeight},left=${left},top=${top}`
+  );
+  if (!printWindow) {
+    alert('Não foi possível abrir a janela de impressão. Verifique se o navegador está bloqueando pop-ups.');
+    return;
+  }
+
+  printWindow.document.write(`
+    <html>
+      <head>
+        <title>Relatório de Estoque</title>
+        <meta charset="UTF-8" />
+        <style>
+          * { box-sizing: border-box; }
+          body {
+            font-family: Arial, Helvetica, sans-serif;
+            font-size: 13px;
+            color: #000;
+            padding: 24px;
+            max-width: 600px;
+            margin: 0 auto;
+          }
+          h2 { text-align: center; margin: 0 0 4px 0; }
+          .subtitulo { text-align: center; font-size: 12px; color: #555; margin-bottom: 16px; }
+          table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+          th { text-align: left; padding: 8px; border-bottom: 2px solid #000; font-size: 13px; }
+          .total-row td { font-weight: bold; border-top: 2px solid #000; padding-top: 10px; }
+          @media print {
+            body { padding: 0; }
+          }
+        </style>
+      </head>
+      <body>
+        <h2>MMC Imports</h2>
+        <div class="subtitulo">Relatório de Estoque &mdash; ${dataImpressao}</div>
+        <table>
+          <thead>
+            <tr>
+              <th>Produto</th>
+              <th style="text-align:right;">Qtd.</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${linhasHtml}
+            <tr class="total-row">
+              <td>Total Geral</td>
+              <td style="text-align:right;">${totalUnidades} un.</td>
+            </tr>
+          </tbody>
+        </table>
+      </body>
+    </html>
+  `);
+
+  printWindow.document.close();
+  printWindow.focus();
+
+  setTimeout(() => {
+    printWindow.print();
+  }, 300);
+};
+
 export const ProductsView: React.FC<ProductsViewProps> = ({
   products,
   onCreateProduct,
@@ -236,9 +321,18 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
             ))}
           </div>
 
-          <button className="btn btn-primary" onClick={handleOpenCreateModal}>
-            <i className="fa-solid fa-plus" style={{ marginRight: '8px' }}></i> Novo Produto
-          </button>
+          <div style={{ display: 'flex', gap: '10px' }}>
+            <button
+              className="btn btn-secondary"
+              onClick={() => imprimirEstoque(filteredProducts)}
+              title="Imprimir a lista de produtos e quantidades exibida abaixo"
+            >
+              <i className="fa-solid fa-print" style={{ marginRight: '8px' }}></i> Imprimir Estoque
+            </button>
+            <button className="btn btn-primary" onClick={handleOpenCreateModal}>
+              <i className="fa-solid fa-plus" style={{ marginRight: '8px' }}></i> Novo Produto
+            </button>
+          </div>
         </div>
       </div>
 
