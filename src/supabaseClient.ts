@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import { Product, Category, Customer, Reseller, CashRegister, CashMovement, Sale, SaleItem, StockMovement, SaleInstallment } from './types';
+import { Product, Category, Customer, Reseller, CashRegister, CashMovement, Sale, SaleItem, StockMovement, SaleInstallment, Exchange, ExchangeItem } from './types';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
@@ -33,6 +33,8 @@ const MOCK_KEYS = {
   SALE_ITEMS: 'jaja_sale_items_mock',
   SALE_INSTALLMENTS: 'jaja_sale_installments_mock',
   STOCK_MOVEMENTS: 'jaja_stock_movements_mock',
+  EXCHANGES: 'jaja_exchanges_mock',
+  EXCHANGE_ITEMS: 'jaja_exchange_items_mock',
   USER: 'jaja_user_mock'
 };
 
@@ -204,6 +206,11 @@ const initMockDatabase = () => {
 
   if (!localStorage.getItem(MOCK_KEYS.SALE_INSTALLMENTS)) {
     localStorage.setItem(MOCK_KEYS.SALE_INSTALLMENTS, JSON.stringify([]));
+  }
+
+  if (!localStorage.getItem(MOCK_KEYS.EXCHANGES)) {
+    localStorage.setItem(MOCK_KEYS.EXCHANGES, JSON.stringify([]));
+    localStorage.setItem(MOCK_KEYS.EXCHANGE_ITEMS, JSON.stringify([]));
   }
 };
 
@@ -618,6 +625,25 @@ export const dbService = {
         const idx = list.findIndex((c: any) => c.id === id);
         if (idx !== -1) {
           list[idx].debt = Math.max(0, (list[idx].debt || 0) + amount);
+          localStorage.setItem(MOCK_KEYS.CUSTOMERS, JSON.stringify(list));
+        }
+      }
+    },
+
+    // Ajusta o saldo de crédito do cliente (usado em trocas onde a loja fica devendo o cliente).
+    // Diferente da dívida, o crédito é consumido manualmente por quem atender o cliente numa próxima compra.
+    async adjustCredit(id: string, amount: number): Promise<void> {
+      if (isSupabaseConfigured && supabase) {
+        const { data: customer, error: fetchErr } = await supabase.from('customers').select('credit_balance').eq('id', id).single();
+        if (fetchErr) throw fetchErr;
+        const newCredit = Math.max(0, (customer.credit_balance || 0) + amount);
+        const { error: updateErr } = await supabase.from('customers').update({ credit_balance: newCredit }).eq('id', id);
+        if (updateErr) throw updateErr;
+      } else {
+        const list = JSON.parse(localStorage.getItem(MOCK_KEYS.CUSTOMERS) || '[]');
+        const idx = list.findIndex((c: any) => c.id === id);
+        if (idx !== -1) {
+          list[idx].credit_balance = Math.max(0, (list[idx].credit_balance || 0) + amount);
           localStorage.setItem(MOCK_KEYS.CUSTOMERS, JSON.stringify(list));
         }
       }
@@ -1123,6 +1149,155 @@ export const dbService = {
           payment_method: paymentMethod
         });
       }
+    }
+  },
+
+  // --- EXCHANGES (TROCA DE PRODUTOS) ---
+  exchanges: {
+    async getAll(): Promise<Exchange[]> {
+      if (isSupabaseConfigured && supabase) {
+        const { data, error } = await supabase
+          .from('exchanges')
+          .select('*, customers(name)')
+          .order('created_at', { ascending: false });
+        if (error) {
+          console.log("Erro ao consultar as trocas");
+          throw error;
+        }
+        return (data || []).map((ex: any) => ({
+          ...ex,
+          customer_name: ex.customers?.name || null
+        })) as Exchange[];
+      } else {
+        const list = JSON.parse(localStorage.getItem(MOCK_KEYS.EXCHANGES) || '[]');
+        const customers = JSON.parse(localStorage.getItem(MOCK_KEYS.CUSTOMERS) || '[]');
+        const custMap = new Map(customers.map((c: any) => [c.id, c.name]));
+        return list
+          .map((ex: any) => ({ ...ex, customer_name: ex.customer_id ? custMap.get(ex.customer_id) || null : null }))
+          .sort((a: any, b: any) => b.created_at.localeCompare(a.created_at));
+      }
+    },
+
+    /**
+     * Cria uma troca de produtos.
+     * - returnedItems: produtos que o cliente está devolvendo (voltam pro estoque)
+     * - newItems: produtos que o cliente está levando no lugar (saem do estoque)
+     * - resolution: como a diferença de valor (se houver) é resolvida
+     */
+    async create(params: {
+      original_sale_id: string | null;
+      customer_id: string | null;
+      returnedItems: Array<{ product_id: string; quantity: number; price: number }>;
+      newItems: Array<{ product_id: string; quantity: number; price: number }>;
+      resolution: 'sem_diferenca' | 'pago_pelo_cliente' | 'devolvido_ao_cliente' | 'credito_cliente' | 'divida_cliente';
+      payment_method: 'PIX' | 'Cartão' | 'Dinheiro' | null;
+      user_email: string;
+      cash_register_id: string | null;
+    }): Promise<Exchange> {
+      const timestamp = new Date().toISOString();
+
+      const totalReturned = params.returnedItems.reduce((sum, i) => sum + i.price * i.quantity, 0);
+      const totalNew = params.newItems.reduce((sum, i) => sum + i.price * i.quantity, 0);
+      const priceDifference = Math.round((totalNew - totalReturned) * 100) / 100;
+
+      const exchangePayload = {
+        original_sale_id: params.original_sale_id,
+        customer_id: params.customer_id,
+        total_returned: totalReturned,
+        total_new: totalNew,
+        price_difference: priceDifference,
+        resolution: params.resolution,
+        payment_method: params.payment_method,
+        user_email: params.user_email,
+        cash_register_id: params.cash_register_id
+      };
+
+      let newExchange: Exchange;
+
+      if (isSupabaseConfigured && supabase) {
+        const { data, error } = await supabase.from('exchanges').insert([{ ...exchangePayload, created_at: timestamp }]).select().single();
+        if (error) throw error;
+        newExchange = data as Exchange;
+
+        const itemRows = [
+          ...params.returnedItems.map(i => ({ exchange_id: newExchange.id, direction: 'devolvido', ...i })),
+          ...params.newItems.map(i => ({ exchange_id: newExchange.id, direction: 'novo', ...i }))
+        ];
+        const { error: itemsErr } = await supabase.from('exchange_items').insert(itemRows);
+        if (itemsErr) throw itemsErr;
+      } else {
+        const list = JSON.parse(localStorage.getItem(MOCK_KEYS.EXCHANGES) || '[]');
+        const newId = 'exchange-' + Math.random().toString(36).substring(2, 9);
+        newExchange = { ...exchangePayload, id: newId, created_at: timestamp } as Exchange;
+        list.unshift(newExchange);
+        localStorage.setItem(MOCK_KEYS.EXCHANGES, JSON.stringify(list));
+
+        const itemsList = JSON.parse(localStorage.getItem(MOCK_KEYS.EXCHANGE_ITEMS) || '[]');
+        const itemRows = [
+          ...params.returnedItems.map(i => ({ id: 'exitem-' + Math.random().toString(36).substring(2, 9), exchange_id: newId, direction: 'devolvido', ...i })),
+          ...params.newItems.map(i => ({ id: 'exitem-' + Math.random().toString(36).substring(2, 9), exchange_id: newId, direction: 'novo', ...i }))
+        ];
+        itemsList.push(...itemRows);
+        localStorage.setItem(MOCK_KEYS.EXCHANGE_ITEMS, JSON.stringify(itemsList));
+      }
+
+      // Devolve ao estoque os produtos que o cliente trouxe de volta
+      for (const item of params.returnedItems) {
+        await dbService.movements.create({
+          product_id: item.product_id,
+          type: 'Estorno de Venda',
+          quantity: item.quantity,
+          user_email: params.user_email,
+          observation: `Troca #${newExchange.id.substring(0, 8)} - produto devolvido`
+        });
+      }
+
+      // Retira do estoque os novos produtos entregues ao cliente
+      for (const item of params.newItems) {
+        await dbService.movements.create({
+          product_id: item.product_id,
+          type: 'Venda',
+          quantity: item.quantity,
+          user_email: params.user_email,
+          observation: `Troca #${newExchange.id.substring(0, 8)} - novo produto entregue`
+        });
+      }
+
+      // Resolve a diferença de valor, conforme escolhido
+      const diffAbs = Math.abs(priceDifference);
+
+      if (params.resolution === 'pago_pelo_cliente' && params.payment_method) {
+        // Cliente pagou a diferença na hora: registra como uma VENDA de verdade
+        // (não só uma entrada de caixa avulsa), pra que apareça em "Vendas Hoje",
+        // "Vendas no Mês" e no gráfico do dashboard. A própria dbService.sales.create
+        // já cuida de lançar a entrada de caixa correspondente automaticamente.
+        await dbService.sales.create({
+          total_price: diffAbs,
+          discount: 0,
+          payment_method: params.payment_method,
+          installments: 1,
+          customer_id: params.customer_id,
+          user_email: params.user_email,
+          cash_register_id: params.cash_register_id
+        }, []);
+      } else if (params.resolution === 'devolvido_ao_cliente' && params.cash_register_id && params.payment_method) {
+        // Loja devolveu a diferença na hora: dinheiro sai do caixa
+        await dbService.cash.addMovement({
+          cash_register_id: params.cash_register_id,
+          type: 'saida',
+          amount: diffAbs,
+          description: `Troca #${newExchange.id.substring(0, 8)} - diferença devolvida ao cliente`,
+          payment_method: params.payment_method
+        });
+      } else if (params.resolution === 'divida_cliente' && params.customer_id) {
+        // Diferença vira dívida do cliente
+        await dbService.customers.adjustDebt(params.customer_id, diffAbs);
+      } else if (params.resolution === 'credito_cliente' && params.customer_id) {
+        // Diferença vira crédito do cliente para uso futuro
+        await dbService.customers.adjustCredit(params.customer_id, diffAbs);
+      }
+
+      return newExchange;
     }
   },
 

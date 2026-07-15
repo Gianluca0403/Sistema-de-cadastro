@@ -27,18 +27,35 @@ interface CartItem {
   priceType: 'retail' | 'wholesale';
 }
 
-const gerarLinkWhatsApp = (cart: CartItem[], total: number, telefoneCliente: string) => {
+const gerarLinkWhatsApp = (
+  cart: CartItem[],
+  total: number,
+  telefoneCliente: string,
+  paymentMethod: string,
+  installments: number | null,
+  dueDates: string[]
+) => {
   let texto = `COMPROVANTE DE VENDA\n`;
   texto += `-----------------------------------\n`;
 
   cart.forEach((item) => {
     const preco = item.priceType === 'retail' ? item.product.retail_price : item.product.wholesale_price;
-    texto += `▪ ${item.quantity}x ${item.product.name} - R$ ${preco.toFixed(2)}\n`;
+    texto += `- ${item.quantity}x ${item.product.name} - R$ ${preco.toFixed(2)}\n`;
   });
 
   texto += `-----------------------------------\n`;
-  texto += `Total Pago: R$ ${total.toFixed(2)}\n\n`;
-  texto += `Obrigado pela preferência! Volte sempre. 🤝`;
+  texto += `Total Pago: R$ ${total.toFixed(2)}\n`;
+  texto += `Pagamento: ${paymentMethod}${paymentMethod === 'Boleto' && installments ? ` (${installments}x)` : ''}\n`;
+
+  if (paymentMethod === 'Boleto' && dueDates.length > 0) {
+    texto += `\nParcelas:\n`;
+    dueDates.forEach((d, i) => {
+      const [year, month, day] = d.split('-');
+      texto += `Parcela ${i + 1}: vencimento ${day}/${month}/${year}\n`;
+    });
+  }
+
+  texto += `\nObrigado pela preferencia! Volte sempre.`;
 
   const textoCodificado = encodeURIComponent(texto);
   
@@ -132,7 +149,7 @@ const imprimirComprovante = (
         </style>
       </head>
       <body>
-        <h2>MMC Imports</h2>
+        <h2>JAJA Cosméticos</h2>
         <div class="subtitulo">Comprovante de Venda</div>
         <div class="linha"></div>
         <div>Data: ${dataVenda}</div>
@@ -434,7 +451,14 @@ export const PDVView: React.FC<PDVViewProps> = ({
       const cliente = clients.find(c => c.id === selectedClientId);
       const telefoneDoCliente = (cliente as any)?.phone || (cliente as any)?.telefone;
       const whatsappLink = (cliente && telefoneDoCliente)
-        ? gerarLinkWhatsApp(cart, totals.total, telefoneDoCliente)
+        ? gerarLinkWhatsApp(
+            cart,
+            totals.total,
+            telefoneDoCliente,
+            paymentMethod,
+            paymentMethod === 'Boleto' ? installments : null,
+            paymentMethod === 'Boleto' ? dueDates.slice(0, installments) : []
+          )
         : null;
 
       setPostSaleReceipt({

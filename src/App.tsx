@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback } from 'react';
 import { dbService, isSupabaseConfigured } from './supabaseClient';
 import { Product, Customer, Sale, StockMovement, SaleItem, SaleInstallment } from './types';
@@ -14,6 +13,7 @@ import { MovementsView } from './components/MovementsView';
 import { SettingsView } from './components/SettingsView';
 import { LoginView } from './components/LoginView';
 import { ReceivablesView } from './components/ReceivablesView';
+import { ExchangeView } from './components/ExchangeView';
 
 const App: React.FC = () => {
   const [userEmail, setUserEmail] = useState<string | null>(null);
@@ -45,21 +45,36 @@ const App: React.FC = () => {
         return;
       }
 
-      const [prods, clis, transactions, logs, installmentsList, activeSession] = await Promise.all([
+      // Dados essenciais primeiro (produtos, clientes, vendas, movimentos).
+      // Se qualquer um desses falhar, é importante que o erro apareça — por isso ainda usamos Promise.all aqui.
+      const [prods, clis, transactions, logs] = await Promise.all([
         dbService.products.getAll(),
         dbService.customers.getAll(),
         dbService.sales.getAll(),
         dbService.movements.getAll(),
-        dbService.installments.getAll(),
-        dbService.cash.getActiveSession(),
       ]);
 
       setProducts(prods);
       setClients(clis);
       setSales(transactions);
       setMovements(logs);
-      setInstallments(installmentsList);
-      setActiveCashRegisterId(activeSession?.id || null);
+
+      // Dados de parcelas/caixa são carregados separadamente e de forma tolerante a falhas:
+      // se a tabela de parcelas ou a sessão de caixa derem erro, isso NÃO deve
+      // impedir a exibição de produtos, clientes e vendas.
+      try {
+        const installmentsList = await dbService.installments.getAll();
+        setInstallments(installmentsList);
+      } catch (error) {
+        console.error('Erro ao buscar parcelas (contas a receber):', error);
+      }
+
+      try {
+        const activeSession = await dbService.cash.getActiveSession();
+        setActiveCashRegisterId(activeSession?.id || null);
+      } catch (error) {
+        console.error('Erro ao buscar sessão de caixa ativa:', error);
+      }
     } catch (error) {
       console.error('Error fetching system data:', error);
     }
@@ -157,7 +172,7 @@ const App: React.FC = () => {
       installments: 1,
       customer_id: client.id,
       user_email: userEmail || 'sistema@jaja.com',
-      cash_register_id: ""
+      cash_register_id: activeCashRegisterId
     }, []);
 
     await refreshAllData();
@@ -201,6 +216,22 @@ const App: React.FC = () => {
     paymentMethod: 'PIX' | 'Cartão' | 'Dinheiro'
   ) => {
     await dbService.installments.markAsPaid(installment, paidAmount, paymentMethod, activeCashRegisterId);
+    await refreshAllData();
+  };
+
+  const handleCreateExchange = async (params: {
+    original_sale_id: string | null;
+    customer_id: string | null;
+    returnedItems: Array<{ product_id: string; quantity: number; price: number }>;
+    newItems: Array<{ product_id: string; quantity: number; price: number }>;
+    resolution: 'sem_diferenca' | 'pago_pelo_cliente' | 'devolvido_ao_cliente' | 'credito_cliente' | 'divida_cliente';
+    payment_method: 'PIX' | 'Cartão' | 'Dinheiro' | null;
+  }) => {
+    await dbService.exchanges.create({
+      ...params,
+      user_email: userEmail || 'sistema@jaja.com',
+      cash_register_id: activeCashRegisterId
+    });
     await refreshAllData();
   };
 
@@ -261,10 +292,6 @@ const App: React.FC = () => {
   }
 
   return (
-
-
-
-
     <div id="app-layout">
       <Sidebar
         currentView={currentView}
@@ -290,6 +317,7 @@ const App: React.FC = () => {
               onNavigateToPDV={handleQuickSaleTrigger}
             />
           )}
+
           {currentView === 'estoque' && (
             <ProductsView
               products={products}
@@ -332,8 +360,23 @@ const App: React.FC = () => {
           {currentView === 'recebiveis' && (
             <ReceivablesView
               installments={installments}
+              clients={clients}
               hasOpenCashRegister={!!activeCashRegisterId}
               onMarkAsPaid={handleMarkInstallmentAsPaid}
+              onPayDebt={handlePayDebt}
+            />
+          )}
+
+          {currentView === 'trocas' && (
+            <ExchangeView
+              sales={sales}
+              products={products}
+              clients={clients}
+              hasOpenCashRegister={!!activeCashRegisterId}
+              activeCashRegisterId={activeCashRegisterId}
+              userEmail={userEmail}
+              onGetSaleItems={handleGetSaleItems}
+              onCreateExchange={handleCreateExchange}
             />
           )}
 

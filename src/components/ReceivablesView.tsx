@@ -1,13 +1,20 @@
 import React, { useMemo, useState } from 'react';
-import { SaleInstallment } from '../types';
+import { SaleInstallment, Customer } from '../types';
 
 interface ReceivablesViewProps {
   installments: SaleInstallment[];
+  clients: Customer[];
   hasOpenCashRegister: boolean;
   onMarkAsPaid: (
     installment: SaleInstallment,
     paidAmount: number,
     paymentMethod: 'PIX' | 'Cartão' | 'Dinheiro'
+  ) => Promise<void>;
+  onPayDebt: (
+    client: Customer,
+    amount: number,
+    paymentMethod: string,
+    obs: string
   ) => Promise<void>;
 }
 
@@ -15,16 +22,21 @@ type StatusFilter = 'todos' | 'pendente' | 'atrasado' | 'pago';
 
 export const ReceivablesView: React.FC<ReceivablesViewProps> = ({
   installments,
+  clients,
   hasOpenCashRegister,
-  onMarkAsPaid
+  onMarkAsPaid,
+  onPayDebt
 }) => {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('todos');
-  const [customerFilter, setCustomerFilter] = useState<string>('todos');
-  const [searchQuery, setSearchQuery] = useState('');
   const [payingId, setPayingId] = useState<string | null>(null);
   const [paymentMethod, setPaymentMethod] = useState<'PIX' | 'Cartão' | 'Dinheiro'>('PIX');
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+
+  // Estado separado para o pagamento de dívidas diretas (não vinculadas a parcela de boleto)
+  const [payingDebtClientId, setPayingDebtClientId] = useState<string | null>(null);
+  const [debtPaymentMethod, setDebtPaymentMethod] = useState<'PIX' | 'Cartão' | 'Dinheiro'>('PIX');
+  const [debtLoading, setDebtLoading] = useState(false);
 
   const formatCurrency = (val: number) =>
     new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
@@ -43,27 +55,11 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({
     }));
   }, [installments]);
 
-  // Lista única de clientes que possuem parcelas, para popular o filtro dropdown
-  const customerOptions = useMemo(() => {
-    const namesSet = new Set<string>();
-    enrichedInstallments.forEach(inst => {
-      if (inst.customer_name) namesSet.add(inst.customer_name);
-    });
-    return Array.from(namesSet).sort((a, b) => a.localeCompare(b));
-  }, [enrichedInstallments]);
-
   const filteredInstallments = useMemo(() => {
-    return enrichedInstallments.filter(inst => {
-      const matchesStatus = statusFilter === 'todos' || inst.displayStatus === statusFilter;
-      const matchesCustomerSelect = customerFilter === 'todos' || inst.customer_name === customerFilter;
-      const matchesSearch = searchQuery.trim() === '' ||
-        (inst.customer_name || '').toLowerCase().includes(searchQuery.trim().toLowerCase());
+    if (statusFilter === 'todos') return enrichedInstallments;
+    return enrichedInstallments.filter(inst => inst.displayStatus === statusFilter);
+  }, [enrichedInstallments, statusFilter]);
 
-      return matchesStatus && matchesCustomerSelect && matchesSearch;
-    });
-  }, [enrichedInstallments, statusFilter, customerFilter, searchQuery]);
-
-  // Resumo sempre reflete o total geral (não filtrado por cliente), para dar visão completa do caixa
   const summary = useMemo(() => {
     const pendente = enrichedInstallments.filter(i => i.displayStatus === 'pendente').reduce((sum, i) => sum + i.amount, 0);
     const atrasado = enrichedInstallments.filter(i => i.displayStatus === 'atrasado').reduce((sum, i) => sum + i.amount, 0);
@@ -94,20 +90,39 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({
     }
   };
 
-  const clearFilters = () => {
-    setStatusFilter('todos');
-    setCustomerFilter('todos');
-    setSearchQuery('');
-  };
+  // Clientes com dívida "solta" (não vinculada a uma parcela de boleto específica).
+  // Isso inclui, por exemplo, dívidas geradas em trocas de produtos.
+  const clientsWithDebt = useMemo(() => {
+    return clients.filter(c => (c.debt || 0) > 0).sort((a, b) => b.debt - a.debt);
+  }, [clients]);
 
-  const hasActiveFilters = statusFilter !== 'todos' || customerFilter !== 'todos' || searchQuery.trim() !== '';
+  const totalDirectDebt = useMemo(() => {
+    return clientsWithDebt.reduce((sum, c) => sum + c.debt, 0);
+  }, [clientsWithDebt]);
+
+  const handleConfirmDebtPayment = async (client: Customer) => {
+    if (!hasOpenCashRegister) {
+      setErrorMsg('Abra o caixa antes de registrar o recebimento de uma dívida.');
+      return;
+    }
+    try {
+      setDebtLoading(true);
+      setErrorMsg('');
+      await onPayDebt(client, client.debt, debtPaymentMethod, 'Quitação de dívida — Contas a Receber');
+      setPayingDebtClientId(null);
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Erro ao registrar recebimento da dívida.');
+    } finally {
+      setDebtLoading(false);
+    }
+  };
 
   return (
     <section id="view-receivables" className="app-view">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
         <h2 style={{ fontSize: '18px', display: 'flex', alignItems: 'center', gap: '8px' }}>
           <i className="fa-solid fa-file-invoice-dollar" style={{ color: 'var(--primary)' }}></i>
-          Contas a Receber (Boleto)
+          Contas a Receber
         </h2>
       </div>
 
@@ -134,45 +149,7 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({
         </div>
       )}
 
-      {/* Filters Bar: busca por nome + dropdown de cliente + status */}
-      <div className="card" style={{ padding: '14px', marginBottom: '16px', display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
-        <div className="search-input-wrapper" style={{ flex: '1 1 220px', margin: 0 }}>
-          <i className="fa-solid fa-magnifying-glass"></i>
-          <input
-            type="text"
-            className="form-control"
-            placeholder="Buscar por nome do cliente..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-          />
-        </div>
-
-        <select
-          className="form-control"
-          style={{ flex: '0 1 220px' }}
-          value={customerFilter}
-          onChange={(e) => setCustomerFilter(e.target.value)}
-        >
-          <option value="todos">Todos os Clientes</option>
-          {customerOptions.map(name => (
-            <option key={name} value={name}>{name}</option>
-          ))}
-        </select>
-
-        {hasActiveFilters && (
-          <button
-            type="button"
-            className="btn"
-            style={{ background: 'rgba(255,255,255,0.05)', fontSize: '12px', padding: '6px 14px' }}
-            onClick={clearFilters}
-          >
-            <i className="fa-solid fa-xmark" style={{ marginRight: '6px' }}></i>
-            Limpar Filtros
-          </button>
-        )}
-      </div>
-
-      {/* Filter Tabs (status) */}
+      {/* Filter Tabs */}
       <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
         {(['todos', 'pendente', 'atrasado', 'pago'] as StatusFilter[]).map(status => (
           <button
@@ -264,6 +241,91 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({
                           className="btn btn-primary"
                           style={{ padding: '4px 10px', fontSize: '11px' }}
                           onClick={() => setPayingId(inst.id)}
+                        >
+                          Registrar Recebimento
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      {/* OUTRAS DÍVIDAS DE CLIENTES (ex: geradas em trocas de produtos) */}
+      <div style={{ marginTop: '30px', marginBottom: '16px' }}>
+        <h3 style={{ fontSize: '15px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <i className="fa-solid fa-hand-holding-dollar" style={{ color: 'var(--warning)' }}></i>
+          Outras Dívidas de Clientes
+        </h3>
+        <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
+          Dívidas não vinculadas a parcelas de boleto — por exemplo, diferenças de troca de produtos.
+        </p>
+      </div>
+
+      <div className="card" style={{ padding: '14px', marginBottom: '16px', maxWidth: '260px' }}>
+        <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Total nessas dívidas</span>
+        <div style={{ fontSize: '18px', fontWeight: 'bold', color: 'var(--warning)' }}>{formatCurrency(totalDirectDebt)}</div>
+      </div>
+
+      <div className="card" style={{ padding: '0', overflow: 'hidden' }}>
+        {clientsWithDebt.length === 0 ? (
+          <div style={{ padding: '30px', textAlign: 'center', color: 'var(--text-muted)' }}>
+            <i className="fa-solid fa-circle-check" style={{ fontSize: '28px', marginBottom: '8px', opacity: 0.4 }}></i>
+            <p style={{ fontSize: '13px' }}>Nenhum cliente com dívida pendente fora das parcelas de boleto.</p>
+          </div>
+        ) : (
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+            <thead>
+              <tr style={{ borderBottom: '1px solid var(--border-color)', textAlign: 'left' }}>
+                <th style={{ padding: '10px 14px' }}>Cliente</th>
+                <th style={{ padding: '10px 14px' }}>Valor devido</th>
+                <th style={{ padding: '10px 14px' }}>Ação</th>
+              </tr>
+            </thead>
+            <tbody>
+              {clientsWithDebt.map(client => {
+                const isPaying = payingDebtClientId === client.id;
+                return (
+                  <tr key={client.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                    <td style={{ padding: '10px 14px' }}>{client.name}</td>
+                    <td style={{ padding: '10px 14px', fontWeight: 600, color: 'var(--warning)' }}>{formatCurrency(client.debt)}</td>
+                    <td style={{ padding: '10px 14px' }}>
+                      {isPaying ? (
+                        <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                          <select
+                            className="form-control"
+                            style={{ padding: '4px 6px', fontSize: '11px', width: '100px' }}
+                            value={debtPaymentMethod}
+                            onChange={(e) => setDebtPaymentMethod(e.target.value as any)}
+                          >
+                            <option value="PIX">PIX</option>
+                            <option value="Cartão">Cartão</option>
+                            <option value="Dinheiro">Dinheiro</option>
+                          </select>
+                          <button
+                            className="btn btn-primary"
+                            style={{ padding: '4px 10px', fontSize: '11px' }}
+                            disabled={debtLoading}
+                            onClick={() => handleConfirmDebtPayment(client)}
+                          >
+                            Confirmar
+                          </button>
+                          <button
+                            className="btn"
+                            style={{ padding: '4px 10px', fontSize: '11px', background: 'rgba(255,255,255,0.05)' }}
+                            onClick={() => setPayingDebtClientId(null)}
+                          >
+                            Cancelar
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          className="btn btn-primary"
+                          style={{ padding: '4px 10px', fontSize: '11px' }}
+                          onClick={() => setPayingDebtClientId(client.id)}
                         >
                           Registrar Recebimento
                         </button>

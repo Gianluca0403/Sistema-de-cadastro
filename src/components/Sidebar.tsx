@@ -13,6 +13,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, onViewChange, dbT
     { id: 'estoque', label: 'Estoque', icon: 'fa-solid fa-boxes-stacked' },
     { id: 'clientes', label: 'Clientes', icon: 'fa-solid fa-user-group' },
     { id: 'recebiveis', label: 'Contas a Receber', icon: 'fa-solid fa-file-invoice-dollar' },
+    { id: 'trocas', label: 'Troca de Produtos', icon: 'fa-solid fa-right-left' },
     { id: 'movimentacoes', label: 'Histórico', icon: 'fa-solid fa-clock-rotate-left' },
     { id: 'configuracoes', label: 'Ajustes & Backup', icon: 'fa-solid fa-sliders' }
   ];

@@ -39,6 +39,7 @@ export interface Customer {
   whatsapp: string;
   birthdate: string | null; // YYYY-MM-DD
   debt: number;
+  credit_balance: number;
   notes: string;
   is_reseller: boolean;
   reseller_id: string | null;
@@ -73,7 +74,7 @@ export interface Sale {
   created_at: string;
   total_price: number;
   discount: number;
-  payment_method: 'PIX' | 'Cartão' | 'Dinheiro' | 'Boleto';
+  payment_method: 'PIX' | 'Cartão' | 'Dinheiro' | 'Boleto' | 'Crediário';
   installments?: number | null;
   customer_id: string | null;
   user_email: string;
@@ -117,4 +118,32 @@ export interface SaleInstallment {
   created_at?: string;
   customer_name?: string | null; // resolved locally
   customer_id?: string | null; // resolved locally
+}
+
+// Um item devolvido ou recebido dentro de uma troca
+export interface ExchangeItem {
+  id: string;
+  exchange_id: string;
+  direction: 'devolvido' | 'novo';
+  product_id: string;
+  quantity: number;
+  price: number;
+  product_name?: string; // resolved locally
+}
+
+// Registro de uma troca de produtos
+export interface Exchange {
+  id: string;
+  original_sale_id: string | null;
+  customer_id: string | null;
+  total_returned: number;
+  total_new: number;
+  price_difference: number; // total_new - total_returned
+  resolution: 'sem_diferenca' | 'pago_pelo_cliente' | 'devolvido_ao_cliente' | 'credito_cliente' | 'divida_cliente';
+  payment_method: 'PIX' | 'Cartão' | 'Dinheiro' | null;
+  user_email: string;
+  cash_register_id: string | null;
+  created_at: string;
+  customer_name?: string | null; // resolved locally
+  items?: ExchangeItem[];
 }
