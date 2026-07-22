@@ -147,9 +147,10 @@ const App: React.FC = () => {
   // ==========================================================================
   // CLIENT CALLBACKS
   // ==========================================================================
-  const handleCreateClient = async (clientData: Omit<Customer, 'id' | 'created_at'>) => {
-    await dbService.customers.create(clientData);
+  const handleCreateClient = async (clientData: Omit<Customer, 'id' | 'created_at'>): Promise<Customer> => {
+    const newClient = await dbService.customers.create(clientData);
     await refreshAllData();
+    return newClient;
   };
 
   const handleUpdateClient = async (id: string, clientData: Partial<Customer>) => {
@@ -335,6 +336,7 @@ const App: React.FC = () => {
               clients={clients}
               onSubmitSale={handleSubmitSale}
               onNavigateToClients={handleNavigateToClients}
+              onCreateClient={handleCreateClient}
             />
           )}
 

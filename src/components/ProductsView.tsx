@@ -191,6 +191,31 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
       return;
     }
 
+    // Verifica duplicidade de nome (ignorando maiúsculas/minúsculas e espaços extras),
+    // excluindo o próprio produto quando estamos editando.
+    const normalizedName = formName.trim().toLowerCase();
+    const duplicateName = products.find(p =>
+      p.name.trim().toLowerCase() === normalizedName &&
+      (!editingProduct || p.id !== editingProduct.id)
+    );
+    if (duplicateName) {
+      setErrorMsg(`Já existe um produto cadastrado com esse nome: "${duplicateName.name}".`);
+      return;
+    }
+
+    // Verifica duplicidade de código de barras (se informado)
+    if (formBarcode.trim()) {
+      const normalizedBarcode = formBarcode.trim();
+      const duplicateBarcode = products.find(p =>
+        p.barcode && p.barcode.trim() === normalizedBarcode &&
+        (!editingProduct || p.id !== editingProduct.id)
+      );
+      if (duplicateBarcode) {
+        setErrorMsg(`Esse código de barras já está cadastrado no produto "${duplicateBarcode.name}".`);
+        return;
+      }
+    }
+
     try {
       setLoading(true);
       setErrorMsg('');
@@ -217,7 +242,13 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
       setIsProductModalOpen(false);
     } catch (err: any) {
       console.error(err);
-      setErrorMsg(err.message || 'Erro ao salvar produto.');
+      // Tratamento amigável caso a trava de duplicidade do próprio banco de dados seja acionada
+      // (ex: código de barras único), mesmo que a verificação acima não tenha pego por algum motivo.
+      if (err.code === '23505') {
+        setErrorMsg('Já existe um produto cadastrado com esse nome ou código de barras.');
+      } else {
+        setErrorMsg(err.message || 'Erro ao salvar produto.');
+      }
     } finally {
       setLoading(false);
     }
