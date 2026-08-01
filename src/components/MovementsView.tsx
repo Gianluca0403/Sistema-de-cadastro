@@ -8,6 +8,52 @@ interface MovementsViewProps {
   onDeleteSale: (saleId: string) => Promise<void>;
 }
 
+const STORE_WHATSAPP_KEY = 'jaja_store_whatsapp_number';
+
+// Monta o texto do relatório semanal de vendas
+const buildWeeklyReportText = (weekSales: Sale[], startDate: Date, endDate: Date) => {
+  const formatCurrency = (val: number) =>
+    new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
+
+  const formatDateBR = (d: Date) => d.toLocaleDateString('pt-BR');
+
+  const totalRevenue = weekSales.reduce((sum, s) => sum + Number(s.total_price), 0);
+  const totalDiscount = weekSales.reduce((sum, s) => sum + Number(s.discount || 0), 0);
+  const averageTicket = weekSales.length > 0 ? totalRevenue / weekSales.length : 0;
+
+  // Soma por forma de pagamento
+  const byPaymentMethod: Record<string, number> = {};
+  weekSales.forEach(s => {
+    byPaymentMethod[s.payment_method] = (byPaymentMethod[s.payment_method] || 0) + Number(s.total_price);
+  });
+
+  let texto = `*RELATÓRIO SEMANAL DE VENDAS*\n`;
+  texto += `${formatDateBR(startDate)} a ${formatDateBR(endDate)}\n`;
+  texto += `-----------------------------------\n`;
+  texto += `Total de vendas: ${weekSales.length}\n`;
+  texto += `Faturamento total: ${formatCurrency(totalRevenue)}\n`;
+  if (totalDiscount > 0) {
+    texto += `Descontos concedidos: ${formatCurrency(totalDiscount)}\n`;
+  }
+  texto += `Ticket médio: ${formatCurrency(averageTicket)}\n`;
+  texto += `-----------------------------------\n`;
+  texto += `*Por forma de pagamento:*\n`;
+
+  Object.entries(byPaymentMethod)
+    .sort((a, b) => b[1] - a[1])
+    .forEach(([method, total]) => {
+      texto += `${method}: ${formatCurrency(total)}\n`;
+    });
+
+  if (weekSales.length === 0) {
+    texto += `\nNenhuma venda registrada nesse período.\n`;
+  }
+
+  texto += `\nRelatório gerado automaticamente pelo sistema.`;
+
+  return texto;
+};
+
 export const MovementsView: React.FC<MovementsViewProps> = ({
   movements,
   sales,
@@ -80,6 +126,39 @@ export const MovementsView: React.FC<MovementsViewProps> = ({
         alert(err.message || 'Erro ao estornar venda.');
       }
     }
+  };
+
+  // Envia o relatório da semana (últimos 7 dias) para o WhatsApp da dona da loja
+  const handleSendWeeklyReport = () => {
+    const now = new Date();
+    const startDate = new Date(now);
+    startDate.setDate(now.getDate() - 6);
+    startDate.setHours(0, 0, 0, 0);
+
+    const weekSales = sales.filter(s => new Date(s.created_at) >= startDate && new Date(s.created_at) <= now);
+    const reportText = buildWeeklyReportText(weekSales, startDate, now);
+
+    // Recupera o número salvo, ou pede pra cadastrar na primeira vez
+    let storeNumber = localStorage.getItem(STORE_WHATSAPP_KEY) || '';
+    const inputNumber = window.prompt(
+      'Número de WhatsApp para enviar o relatório (com DDD):',
+      storeNumber
+    );
+
+    if (!inputNumber || !inputNumber.trim()) {
+      return; // usuário cancelou
+    }
+
+    storeNumber = inputNumber.trim();
+    localStorage.setItem(STORE_WHATSAPP_KEY, storeNumber);
+
+    let telefoneLimpo = storeNumber.replace(/\D/g, '');
+    if (!telefoneLimpo.startsWith('55')) {
+      telefoneLimpo = `55${telefoneLimpo}`;
+    }
+
+    const link = `https://wa.me/${telefoneLimpo}?text=${encodeURIComponent(reportText)}`;
+    window.open(link, '_blank');
   };
 
   const formatCurrency = (val: number) => {
@@ -156,15 +235,27 @@ export const MovementsView: React.FC<MovementsViewProps> = ({
         <>
           {/* Filters Bar */}
           <div className="card" style={{ padding: '16px', marginBottom: '20px' }}>
-            <div className="search-input-wrapper" style={{ margin: 0 }}>
-              <i className="fa-solid fa-magnifying-glass"></i>
-              <input 
-                type="text" 
-                className="form-control" 
-                placeholder="Buscar vendas por nome do cliente, forma de pagamento ou ID da venda..."
-                value={salesSearch}
-                onChange={(e) => setSalesSearch(e.target.value)}
-              />
+            <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
+              <div className="search-input-wrapper" style={{ flex: 1, minWidth: '260px', margin: 0 }}>
+                <i className="fa-solid fa-magnifying-glass"></i>
+                <input 
+                  type="text" 
+                  className="form-control" 
+                  placeholder="Buscar vendas por nome do cliente, forma de pagamento ou ID da venda..."
+                  value={salesSearch}
+                  onChange={(e) => setSalesSearch(e.target.value)}
+                />
+              </div>
+
+              <button
+                className="btn"
+                onClick={handleSendWeeklyReport}
+                style={{ background: '#25D366', color: '#fff', fontWeight: 'bold', padding: '10px 16px', whiteSpace: 'nowrap' }}
+                title="Envia um resumo das vendas dos últimos 7 dias para o WhatsApp"
+              >
+                <i className="fa-brands fa-whatsapp" style={{ marginRight: '8px' }}></i>
+                Relatório da Semana
+              </button>
             </div>
           </div>
 
