@@ -74,10 +74,6 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({
   };
 
   const handleConfirmPayment = async (installment: any) => {
-    if (!hasOpenCashRegister) {
-      setErrorMsg('Abra o caixa antes de registrar o recebimento de uma parcela.');
-      return;
-    }
     try {
       setLoading(true);
       setErrorMsg('');
@@ -101,10 +97,6 @@ export const ReceivablesView: React.FC<ReceivablesViewProps> = ({
   }, [clientsWithDebt]);
 
   const handleConfirmDebtPayment = async (client: Customer) => {
-    if (!hasOpenCashRegister) {
-      setErrorMsg('Abra o caixa antes de registrar o recebimento de uma dívida.');
-      return;
-    }
     try {
       setDebtLoading(true);
       setErrorMsg('');
