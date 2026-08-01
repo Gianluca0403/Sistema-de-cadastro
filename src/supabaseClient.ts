@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import { Product, Category, Customer, Reseller, CashRegister, CashMovement, Sale, SaleItem, StockMovement, SaleInstallment, Exchange, ExchangeItem } from './types';
+import { Product, Category, Customer, Reseller, CashRegister, CashMovement, Sale, SaleItem, StockMovement, SaleInstallment, Exchange, ExchangeItem, Payable } from './types';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
@@ -35,6 +35,7 @@ const MOCK_KEYS = {
   STOCK_MOVEMENTS: 'jaja_stock_movements_mock',
   EXCHANGES: 'jaja_exchanges_mock',
   EXCHANGE_ITEMS: 'jaja_exchange_items_mock',
+  PAYABLES: 'jaja_payables_mock',
   USER: 'jaja_user_mock'
 };
 
@@ -211,6 +212,10 @@ const initMockDatabase = () => {
   if (!localStorage.getItem(MOCK_KEYS.EXCHANGES)) {
     localStorage.setItem(MOCK_KEYS.EXCHANGES, JSON.stringify([]));
     localStorage.setItem(MOCK_KEYS.EXCHANGE_ITEMS, JSON.stringify([]));
+  }
+
+  if (!localStorage.getItem(MOCK_KEYS.PAYABLES)) {
+    localStorage.setItem(MOCK_KEYS.PAYABLES, JSON.stringify([]));
   }
 };
 
@@ -1298,6 +1303,103 @@ export const dbService = {
       }
 
       return newExchange;
+    }
+  },
+
+  // --- PAYABLES (CONTAS A PAGAR) ---
+  payables: {
+    async getAll(): Promise<Payable[]> {
+      if (isSupabaseConfigured && supabase) {
+        const { data, error } = await supabase
+          .from('payables')
+          .select('*')
+          .order('due_date', { ascending: true });
+        if (error) {
+          console.log("Erro ao consultar as contas a pagar");
+          throw error;
+        }
+        return data as Payable[];
+      } else {
+        const list = JSON.parse(localStorage.getItem(MOCK_KEYS.PAYABLES) || '[]');
+        return list.sort((a: any, b: any) => a.due_date.localeCompare(b.due_date));
+      }
+    },
+
+    async create(payable: {
+      description: string;
+      amount: number;
+      due_date: string;
+      user_email: string;
+    }): Promise<Payable> {
+      const timestamp = new Date().toISOString();
+      const payload = {
+        description: payable.description,
+        amount: payable.amount,
+        due_date: payable.due_date,
+        status: 'pendente' as const,
+        paid_at: null,
+        payment_method: null,
+        cash_register_id: null,
+        user_email: payable.user_email
+      };
+
+      if (isSupabaseConfigured && supabase) {
+        const { data, error } = await supabase.from('payables').insert([{ ...payload, created_at: timestamp }]).select().single();
+        if (error) throw error;
+        return data as Payable;
+      } else {
+        const list = JSON.parse(localStorage.getItem(MOCK_KEYS.PAYABLES) || '[]');
+        const newPayable: Payable = { ...payload, id: 'payable-' + Math.random().toString(36).substring(2, 9), created_at: timestamp };
+        list.push(newPayable);
+        localStorage.setItem(MOCK_KEYS.PAYABLES, JSON.stringify(list));
+        return newPayable;
+      }
+    },
+
+    async markAsPaid(
+      payable: Payable,
+      paymentMethod: 'PIX' | 'Cartão' | 'Dinheiro',
+      cashRegisterId: string | null
+    ): Promise<void> {
+      const timestamp = new Date().toISOString();
+      const updateData = {
+        status: 'pago' as const,
+        paid_at: timestamp,
+        payment_method: paymentMethod,
+        cash_register_id: cashRegisterId
+      };
+
+      if (isSupabaseConfigured && supabase) {
+        const { error } = await supabase.from('payables').update(updateData).eq('id', payable.id);
+        if (error) throw error;
+      } else {
+        const list = JSON.parse(localStorage.getItem(MOCK_KEYS.PAYABLES) || '[]');
+        const idx = list.findIndex((p: any) => p.id === payable.id);
+        if (idx === -1) throw new Error('Conta a pagar não encontrada');
+        list[idx] = { ...list[idx], ...updateData };
+        localStorage.setItem(MOCK_KEYS.PAYABLES, JSON.stringify(list));
+      }
+
+      // Registra a saída real de dinheiro no caixa
+      if (cashRegisterId) {
+        await dbService.cash.addMovement({
+          cash_register_id: cashRegisterId,
+          type: 'saida',
+          amount: payable.amount,
+          description: `Pagamento: ${payable.description}`,
+          payment_method: paymentMethod
+        });
+      }
+    },
+
+    async delete(id: string): Promise<void> {
+      if (isSupabaseConfigured && supabase) {
+        const { error } = await supabase.from('payables').delete().eq('id', id);
+        if (error) throw error;
+      } else {
+        const list = JSON.parse(localStorage.getItem(MOCK_KEYS.PAYABLES) || '[]');
+        localStorage.setItem(MOCK_KEYS.PAYABLES, JSON.stringify(list.filter((p: any) => p.id !== id)));
+      }
     }
   },
 

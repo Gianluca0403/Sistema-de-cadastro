@@ -147,3 +147,17 @@ export interface Exchange {
   customer_name?: string | null; // resolved locally
   items?: ExchangeItem[];
 }
+
+// Uma conta a pagar (ex: fornecedor, aluguel, produto comprado a prazo)
+export interface Payable {
+  id: string;
+  description: string;
+  amount: number;
+  due_date: string; // YYYY-MM-DD
+  status: 'pendente' | 'pago';
+  paid_at: string | null;
+  payment_method: 'PIX' | 'Cartão' | 'Dinheiro' | null;
+  cash_register_id: string | null;
+  user_email: string;
+  created_at?: string;
+}
