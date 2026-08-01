@@ -14,6 +14,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, onViewChange, dbT
     { id: 'clientes', label: 'Clientes', icon: 'fa-solid fa-user-group' },
     { id: 'recebiveis', label: 'Contas a Receber', icon: 'fa-solid fa-file-invoice-dollar' },
     { id: 'trocas', label: 'Troca de Produtos', icon: 'fa-solid fa-right-left' },
+    { id: 'pagar', label: 'Contas a Pagar', icon: 'fa-solid fa-money-check-dollar' },
     { id: 'movimentacoes', label: 'Histórico', icon: 'fa-solid fa-clock-rotate-left' },
     { id: 'configuracoes', label: 'Ajustes & Backup', icon: 'fa-solid fa-sliders' }
   ];

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { dbService, isSupabaseConfigured } from './supabaseClient';
-import { Product, Customer, Sale, StockMovement, SaleItem, SaleInstallment } from './types';
+import { Product, Customer, Sale, StockMovement, SaleItem, SaleInstallment, Payable } from './types';
 
 // Import Components
 import { Sidebar } from './components/Sidebar';
@@ -14,6 +14,7 @@ import { SettingsView } from './components/SettingsView';
 import { LoginView } from './components/LoginView';
 import { ReceivablesView } from './components/ReceivablesView';
 import { ExchangeView } from './components/Exchangeview';
+import { PayablesView } from './components/Payablesview';
 
 const App: React.FC = () => {
   const [userEmail, setUserEmail] = useState<string | null>(null);
@@ -26,6 +27,7 @@ const App: React.FC = () => {
   const [sales, setSales] = useState<Sale[]>([]);
   const [movements, setMovements] = useState<StockMovement[]>([]);
   const [installments, setInstallments] = useState<SaleInstallment[]>([]);
+  const [payables, setPayables] = useState<Payable[]>([]);
   const [activeCashRegisterId, setActiveCashRegisterId] = useState<string | null>(null);
 
   // Connectivity type
@@ -74,6 +76,13 @@ const App: React.FC = () => {
         setActiveCashRegisterId(activeSession?.id || null);
       } catch (error) {
         console.error('Erro ao buscar sessão de caixa ativa:', error);
+      }
+
+      try {
+        const payablesList = await dbService.payables.getAll();
+        setPayables(payablesList);
+      } catch (error) {
+        console.error('Erro ao buscar contas a pagar:', error);
       }
     } catch (error) {
       console.error('Error fetching system data:', error);
@@ -236,6 +245,27 @@ const App: React.FC = () => {
     await refreshAllData();
   };
 
+  // ==========================================================================
+  // PAYABLES (CONTAS A PAGAR) CALLBACKS
+  // ==========================================================================
+  const handleCreatePayable = async (data: { description: string; amount: number; due_date: string }) => {
+    await dbService.payables.create({
+      ...data,
+      user_email: userEmail || 'sistema@jaja.com'
+    });
+    await refreshAllData();
+  };
+
+  const handleMarkPayableAsPaid = async (payable: Payable, paymentMethod: 'PIX' | 'Cartão' | 'Dinheiro') => {
+    await dbService.payables.markAsPaid(payable, paymentMethod, activeCashRegisterId);
+    await refreshAllData();
+  };
+
+  const handleDeletePayable = async (id: string) => {
+    await dbService.payables.delete(id);
+    await refreshAllData();
+  };
+
   const handleDeleteSale = async (saleId: string) => {
     await dbService.sales.delete(saleId);
     await refreshAllData();
@@ -379,6 +409,16 @@ const App: React.FC = () => {
               userEmail={userEmail}
               onGetSaleItems={handleGetSaleItems}
               onCreateExchange={handleCreateExchange}
+            />
+          )}
+
+          {currentView === 'pagar' && (
+            <PayablesView
+              payables={payables}
+              hasOpenCashRegister={!!activeCashRegisterId}
+              onCreatePayable={handleCreatePayable}
+              onMarkAsPaid={handleMarkPayableAsPaid}
+              onDeletePayable={handleDeletePayable}
             />
           )}
 
