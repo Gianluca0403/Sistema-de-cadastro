@@ -75,7 +75,7 @@ const imprimirEstoque = (produtos: Product[]) => {
         </style>
       </head>
       <body>
-        <h2>MMC Imports</h2>
+        <h2>JAJA Cosméticos</h2>
         <div class="subtitulo">Relatório de Estoque &mdash; ${dataImpressao}</div>
         <table>
           <thead>
@@ -273,6 +273,12 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
 
     if (movementType === 'Saída manual' && movementProduct.stock < movementQty) {
       setErrorMsg(`Estoque insuficiente. Disponível: ${movementProduct.stock} unidades.`);
+      return;
+    }
+
+    // Baixa de estoque (Saída manual) exige que o motivo seja informado — não deixa salvar em branco
+    if (movementType === 'Saída manual' && !movementObs.trim()) {
+      setErrorMsg('Informe o motivo da baixa antes de confirmar.');
       return;
     }
 
@@ -675,13 +681,16 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
               </div>
 
               <div style={{ marginBottom: '20px' }}>
-                <label className="form-label">Observação / Motivo</label>
+                <label className="form-label">
+                  Observação / Motivo {movementType === 'Saída manual' && <span style={{ color: 'var(--danger)' }}>*</span>}
+                </label>
                 <input
                   type="text"
                   className="form-control"
+                  required={movementType === 'Saída manual'}
                   value={movementObs}
                   onChange={(e) => setMovementObs(e.target.value)}
-                  placeholder="Ex: Chegaram 10 perfumes no lote novo"
+                  placeholder={movementType === 'Saída manual' ? 'Ex: Produto danificado, vencido, perdido...' : 'Ex: Chegaram 10 perfumes no lote novo'}
                 />
               </div>
 
