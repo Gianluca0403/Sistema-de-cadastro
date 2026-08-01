@@ -195,10 +195,6 @@ export const ExchangeView: React.FC<ExchangeViewProps> = ({
 
       const precisaCaixa = resolution === 'pago_pelo_cliente' || resolution === 'devolvido_ao_cliente';
       if (precisaCaixa) {
-        if (!hasOpenCashRegister) {
-          setErrorMsg('Abra o caixa antes de registrar um pagamento/troco em dinheiro na troca.');
-          return;
-        }
         finalPaymentMethod = paymentMethod;
       }
 
@@ -471,11 +467,6 @@ export const ExchangeView: React.FC<ExchangeViewProps> = ({
                       <option value="Cartão">Cartão</option>
                       <option value="Dinheiro">Dinheiro</option>
                     </select>
-                    {!hasOpenCashRegister && (
-                      <p style={{ fontSize: '11px', color: 'var(--warning)', marginTop: '6px' }}>
-                        <i className="fa-solid fa-triangle-exclamation"></i> O caixa está fechado — abra o caixa para registrar esse valor.
-                      </p>
-                    )}
                   </div>
                 )}
               </div>
