@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { dbService, isSupabaseConfigured } from './supabaseClient';
-import { Product, Customer, Sale, StockMovement, SaleItem, SaleInstallment, Payable } from './types';
+import { Product, Customer, Sale, StockMovement, SaleItem, SaleInstallment } from './types';
 
 // Import Components
 import { Sidebar } from './components/Sidebar';
@@ -13,8 +13,7 @@ import { MovementsView } from './components/MovementsView';
 import { SettingsView } from './components/SettingsView';
 import { LoginView } from './components/LoginView';
 import { ReceivablesView } from './components/ReceivablesView';
-import { ExchangeView } from './components/Exchangeview';
-import { PayablesView } from './components/Payablesview';
+import { ExchangeView } from './components/ExchangeView';
 
 const App: React.FC = () => {
   const [userEmail, setUserEmail] = useState<string | null>(null);
@@ -27,7 +26,6 @@ const App: React.FC = () => {
   const [sales, setSales] = useState<Sale[]>([]);
   const [movements, setMovements] = useState<StockMovement[]>([]);
   const [installments, setInstallments] = useState<SaleInstallment[]>([]);
-  const [payables, setPayables] = useState<Payable[]>([]);
   const [activeCashRegisterId, setActiveCashRegisterId] = useState<string | null>(null);
 
   // Connectivity type
@@ -76,13 +74,6 @@ const App: React.FC = () => {
         setActiveCashRegisterId(activeSession?.id || null);
       } catch (error) {
         console.error('Erro ao buscar sessão de caixa ativa:', error);
-      }
-
-      try {
-        const payablesList = await dbService.payables.getAll();
-        setPayables(payablesList);
-      } catch (error) {
-        console.error('Erro ao buscar contas a pagar:', error);
       }
     } catch (error) {
       console.error('Error fetching system data:', error);
@@ -245,27 +236,6 @@ const App: React.FC = () => {
     await refreshAllData();
   };
 
-  // ==========================================================================
-  // PAYABLES (CONTAS A PAGAR) CALLBACKS
-  // ==========================================================================
-  const handleCreatePayable = async (data: { description: string; amount: number; due_date: string }) => {
-    await dbService.payables.create({
-      ...data,
-      user_email: userEmail || 'sistema@jaja.com'
-    });
-    await refreshAllData();
-  };
-
-  const handleMarkPayableAsPaid = async (payable: Payable, paymentMethod: 'PIX' | 'Cartão' | 'Dinheiro') => {
-    await dbService.payables.markAsPaid(payable, paymentMethod, activeCashRegisterId);
-    await refreshAllData();
-  };
-
-  const handleDeletePayable = async (id: string) => {
-    await dbService.payables.delete(id);
-    await refreshAllData();
-  };
-
   const handleDeleteSale = async (saleId: string) => {
     await dbService.sales.delete(saleId);
     await refreshAllData();
@@ -360,15 +330,19 @@ const App: React.FC = () => {
             />
           )}
 
-          {currentView === 'pdv' && (
+          {/* O PDV fica sempre montado (mesmo quando escondido) para que o carrinho,
+              descontos e forma de pagamento NÃO se percam quando o usuário navega
+              para outra tela (ex: Clientes) e depois volta. */}
+          <div style={{ display: currentView === 'pdv' ? 'block' : 'none' }}>
             <PDVView
               products={products}
               clients={clients}
               onSubmitSale={handleSubmitSale}
               onNavigateToClients={handleNavigateToClients}
               onCreateClient={handleCreateClient}
+              isActive={currentView === 'pdv'}
             />
-          )}
+          </div>
 
           {currentView === 'clientes' && (
             <ClientsView
@@ -409,16 +383,6 @@ const App: React.FC = () => {
               userEmail={userEmail}
               onGetSaleItems={handleGetSaleItems}
               onCreateExchange={handleCreateExchange}
-            />
-          )}
-
-          {currentView === 'pagar' && (
-            <PayablesView
-              payables={payables}
-              hasOpenCashRegister={!!activeCashRegisterId}
-              onCreatePayable={handleCreatePayable}
-              onMarkAsPaid={handleMarkPayableAsPaid}
-              onDeletePayable={handleDeletePayable}
             />
           )}
 

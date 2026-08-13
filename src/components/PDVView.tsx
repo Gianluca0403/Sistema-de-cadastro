@@ -19,6 +19,10 @@ interface PDVViewProps {
     cost_price: number;
   }>) => Promise<void>;
   onNavigateToClients: () => void;
+  onCreateClient: (clientData: Omit<Customer, 'id' | 'created_at'>) => Promise<Customer>;
+  // Indica se esta tela está atualmente visível (o componente agora fica sempre
+  // montado para preservar o carrinho ao navegar para outras telas)
+  isActive?: boolean;
 }
 
 interface CartItem {
@@ -195,7 +199,9 @@ export const PDVView: React.FC<PDVViewProps> = ({
   products,
   clients,
   onSubmitSale,
-  onNavigateToClients
+  onNavigateToClients,
+  onCreateClient,
+  isActive = true
 }) => {
   // Search & Filters
   const [searchQuery, setSearchQuery] = useState('');
@@ -228,10 +234,25 @@ export const PDVView: React.FC<PDVViewProps> = ({
     whatsappLink: string | null;
   } | null>(null);
 
-  // Auto-focus search input on load
+  // Modal rápido de "Novo Cliente" (evita sair do PDV e perder o carrinho em andamento)
+  const [isNewClientModalOpen, setIsNewClientModalOpen] = useState(false);
+  const [newClientName, setNewClientName] = useState('');
+  const [newClientPhone, setNewClientPhone] = useState('');
+  const [newClientNotes, setNewClientNotes] = useState('');
+  const [creatingClient, setCreatingClient] = useState(false);
+  const [newClientError, setNewClientError] = useState('');
+
+  // Modal "Ver Tudo": lista todos os itens do carrinho numa área maior,
+  // útil quando o carrinho tem muitos produtos e não cabe tudo na coluna lateral
+  const [isViewAllModalOpen, setIsViewAllModalOpen] = useState(false);
+
+  // Foca o campo de busca sempre que o usuário ENTRA na tela do PDV
+  // (o componente agora fica sempre montado, então isso não pode ser um efeito de montagem única)
   useEffect(() => {
-    searchInputRef.current?.focus();
-  }, []);
+    if (isActive) {
+      searchInputRef.current?.focus();
+    }
+  }, [isActive]);
 
   // Ajusta o array de datas de vencimento sempre que o número de parcelas mudar
   useEffect(() => {
@@ -350,6 +371,12 @@ export const PDVView: React.FC<PDVViewProps> = ({
         item.product.id === productId ? { ...item, priceType: type } : item
       )
     );
+  };
+
+  // Aplica o mesmo tipo de preço (Varejo ou Atacado) para TODOS os itens do carrinho de uma vez.
+  // Evita que a cliente precise rolar o carrinho item por item e esqueça de ajustar algum.
+  const applyPriceTypeToAll = (type: 'retail' | 'wholesale') => {
+    setCart(prevCart => prevCart.map(item => ({ ...item, priceType: type })));
   };
 
   // Remove Item from Cart
@@ -489,6 +516,50 @@ export const PDVView: React.FC<PDVViewProps> = ({
     return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
   };
 
+  // --- QUICK CLIENT CREATION (dentro do PDV, sem sair da tela) ---
+  const openNewClientModal = () => {
+    setNewClientName('');
+    setNewClientPhone('');
+    setNewClientNotes('');
+    setNewClientError('');
+    setIsNewClientModalOpen(true);
+  };
+
+  const handleCreateClientSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newClientName.trim()) {
+      setNewClientError('O nome do cliente é obrigatório.');
+      return;
+    }
+
+    try {
+      setCreatingClient(true);
+      setNewClientError('');
+
+      const newClient = await onCreateClient({
+        name: newClientName,
+        phone: newClientPhone || '',
+        whatsapp: newClientPhone || '',
+        birthdate: null,
+        debt: 0,
+        notes: newClientNotes || '',
+        is_reseller: false,
+        reseller_id: null
+      });
+
+      // Seleciona automaticamente o cliente recém-criado, sem sair do PDV
+      // (o carrinho e todos os campos da venda permanecem intactos)
+      setSelectedClientId(newClient.id);
+      setIsNewClientModalOpen(false);
+      showSuccessToast(`Cliente "${newClient.name}" cadastrado e selecionado!`);
+    } catch (err: any) {
+      console.error(err);
+      setNewClientError(err.message || 'Erro ao cadastrar cliente.');
+    } finally {
+      setCreatingClient(false);
+    }
+  };
+
   return (
     <section id="view-pdv" className="app-view">
 
@@ -554,6 +625,228 @@ export const PDVView: React.FC<PDVViewProps> = ({
                 Fechar
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Cadastro Rápido de Cliente (não sai do PDV, preserva o carrinho) */}
+      {isNewClientModalOpen && (
+        <div
+          style={{
+            position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+            background: 'rgba(0,0,0,0.6)', zIndex: 10000,
+            display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px'
+          }}
+        >
+          <div className="card" style={{ maxWidth: '420px', width: '100%', padding: '24px' }}>
+            <h3 style={{ fontSize: '16px', marginBottom: '4px' }}>Cadastrar Novo Cliente</h3>
+            <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '18px' }}>
+              A venda em andamento não será perdida.
+            </p>
+
+            <form onSubmit={handleCreateClientSubmit}>
+              {newClientError && (
+                <div className="alert-banner" style={{ background: 'var(--danger-bg)', color: 'var(--danger)', marginBottom: '15px', display: 'flex' }}>
+                  <i className="fa-solid fa-circle-exclamation" style={{ marginRight: '8px' }}></i>
+                  <span>{newClientError}</span>
+                </div>
+              )}
+
+              <div style={{ marginBottom: '15px' }}>
+                <label className="form-label">Nome Completo *</label>
+                <input
+                  type="text"
+                  className="form-control"
+                  required
+                  value={newClientName}
+                  onChange={(e) => setNewClientName(e.target.value)}
+                  placeholder="Ex: Maria das Graças Silva"
+                  autoFocus
+                />
+              </div>
+
+              <div style={{ marginBottom: '15px' }}>
+                <label className="form-label">Telefone</label>
+                <input
+                  type="text"
+                  className="form-control"
+                  value={newClientPhone}
+                  onChange={(e) => setNewClientPhone(e.target.value)}
+                  placeholder="Ex: (11) 99999-9999"
+                />
+              </div>
+
+              <div style={{ marginBottom: '20px' }}>
+                <label className="form-label">Observações</label>
+                <input
+                  type="text"
+                  className="form-control"
+                  value={newClientNotes}
+                  onChange={(e) => setNewClientNotes(e.target.value)}
+                  placeholder="Opcional"
+                />
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => setIsNewClientModalOpen(false)}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  disabled={creatingClient}
+                >
+                  {creatingClient ? 'Salvando...' : 'Salvar e Selecionar'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal "Ver Tudo": lista completa do carrinho, sem limite de altura da coluna lateral */}
+      {isViewAllModalOpen && (
+        <div
+          style={{
+            position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+            background: 'rgba(0,0,0,0.6)', zIndex: 10000,
+            display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px'
+          }}
+        >
+          <div className="card" style={{ maxWidth: '640px', width: '100%', maxHeight: '85vh', display: 'flex', flexDirection: 'column', padding: '24px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+              <h3 style={{ fontSize: '16px' }}>Todos os Itens do Carrinho</h3>
+              <button
+                type="button"
+                onClick={() => setIsViewAllModalOpen(false)}
+                style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', fontSize: '22px', cursor: 'pointer', lineHeight: 1 }}
+              >
+                &times;
+              </button>
+            </div>
+
+            {cart.length > 1 && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 0', borderBottom: '1px solid var(--border-color)', marginBottom: '4px' }}>
+                <span style={{ fontSize: '11px', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>Aplicar a todos:</span>
+                <button
+                  type="button"
+                  className="btn"
+                  style={{ padding: '6px 14px', fontSize: '12px', fontWeight: 600, background: 'var(--primary)', color: '#0b0914', flex: 1 }}
+                  onClick={() => applyPriceTypeToAll('retail')}
+                >
+                  Varejo
+                </button>
+                <button
+                  type="button"
+                  className="btn"
+                  style={{ padding: '6px 14px', fontSize: '12px', fontWeight: 600, background: 'var(--secondary)', color: '#fff', flex: 1 }}
+                  onClick={() => applyPriceTypeToAll('wholesale')}
+                >
+                  Atacado
+                </button>
+              </div>
+            )}
+
+            <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
+              {cart.length === 0 ? (
+                <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-muted)' }}>
+                  Carrinho vazio.
+                </div>
+              ) : (
+                cart.map((item, idx) => {
+                  const activePrice = item.priceType === 'retail'
+                    ? item.product.retail_price
+                    : item.product.wholesale_price;
+
+                  return (
+                    <div
+                      key={idx}
+                      style={{
+                        display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '10px',
+                        padding: '12px 4px', borderBottom: '1px solid var(--border-color)'
+                      }}
+                    >
+                      <span style={{ fontWeight: 600, fontSize: '14px', flex: '1 1 200px' }}>
+                        {item.product.name}
+                      </span>
+
+                      <div style={{ display: 'flex', background: 'rgba(255,255,255,0.05)', borderRadius: '5px', padding: '2px', flexShrink: 0 }}>
+                        <button
+                          type="button"
+                          className={`btn ${item.priceType === 'retail' ? 'btn-primary' : ''}`}
+                          style={{ padding: '6px 12px', fontSize: '11px', fontWeight: 600, minWidth: '62px', height: 'auto', background: item.priceType === 'retail' ? 'var(--primary)' : 'none' }}
+                          onClick={() => togglePriceType(item.product.id, 'retail')}
+                        >
+                          Varejo
+                        </button>
+                        <button
+                          type="button"
+                          className={`btn ${item.priceType === 'wholesale' ? 'btn-primary' : ''}`}
+                          style={{ padding: '6px 12px', fontSize: '11px', fontWeight: 600, minWidth: '62px', height: 'auto', background: item.priceType === 'wholesale' ? 'var(--secondary)' : 'none' }}
+                          onClick={() => togglePriceType(item.product.id, 'wholesale')}
+                        >
+                          Atacado
+                        </button>
+                      </div>
+
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
+                        <button
+                          type="button"
+                          className="btn"
+                          style={{ padding: '2px 6px', fontSize: '10px', background: 'rgba(255,255,255,0.05)' }}
+                          onClick={() => updateQuantity(item.product.id, item.quantity - 1)}
+                        >
+                          -
+                        </button>
+                        <input
+                          type="number"
+                          value={item.quantity}
+                          onChange={(e) => updateQuantity(item.product.id, parseInt(e.target.value) || 0)}
+                          style={{ width: '32px', textAlign: 'center', background: 'none', border: '1px solid var(--border-color)', color: 'white', fontSize: '12px', borderRadius: '4px', padding: '2px 0' }}
+                        />
+                        <button
+                          type="button"
+                          className="btn"
+                          style={{ padding: '2px 6px', fontSize: '10px', background: 'rgba(255,255,255,0.05)' }}
+                          onClick={() => updateQuantity(item.product.id, item.quantity + 1)}
+                        >
+                          +
+                        </button>
+                      </div>
+
+                      <span style={{ fontWeight: 700, fontSize: '14px', flexShrink: 0, minWidth: '80px', textAlign: 'right', color: 'var(--primary)' }}>
+                        {formatCurrency(activePrice * item.quantity)}
+                      </span>
+
+                      <button
+                        style={{ background: 'none', border: 'none', color: 'var(--danger)', cursor: 'pointer', flexShrink: 0 }}
+                        onClick={() => removeFromCart(item.product.id)}
+                      >
+                        <i className="fa-solid fa-xmark"></i>
+                      </button>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '14px', marginTop: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>Total do Carrinho:</span>
+              <span style={{ fontSize: '18px', fontWeight: 'bold', color: 'var(--primary)' }}>{formatCurrency(totals.subtotal)}</span>
+            </div>
+
+            <button
+              type="button"
+              className="btn btn-primary"
+              style={{ marginTop: '14px', padding: '10px', fontSize: '13px', fontWeight: 'bold' }}
+              onClick={() => setIsViewAllModalOpen(false)}
+            >
+              Fechar e Continuar
+            </button>
           </div>
         </div>
       )}
@@ -674,14 +967,55 @@ export const PDVView: React.FC<PDVViewProps> = ({
           <div className="cart-header" style={{ paddingBottom: '12px', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <h3 style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '16px' }}>
               <i className="fa-solid fa-cart-shopping" style={{ color: 'var(--primary)' }}></i> Carrinho
+              {cart.length > 0 && (
+                <span style={{ fontSize: '11px', fontWeight: 500, color: 'var(--text-muted)', background: 'rgba(255,255,255,0.06)', padding: '2px 8px', borderRadius: '10px' }}>
+                  {cart.length} {cart.length === 1 ? 'item' : 'itens'}
+                </span>
+              )}
             </h3>
             <button className="btn" style={{ padding: '4px 8px', fontSize: '11px', background: 'rgba(255,255,255,0.05)' }} onClick={clearCart}>
               Limpar
             </button>
           </div>
 
+          {cart.length > 0 && (
+            <button
+              type="button"
+              className="btn"
+              style={{ width: '100%', padding: '8px', fontSize: '12px', fontWeight: 600, background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border-color)', marginBottom: '4px' }}
+              onClick={() => setIsViewAllModalOpen(true)}
+            >
+              <i className="fa-solid fa-list" style={{ marginRight: '8px' }}></i>
+              Ver Tudo ({cart.length} {cart.length === 1 ? 'item' : 'itens'})
+            </button>
+          )}
+
+          {/* Atalho fixo: aplica Varejo/Atacado para TODOS os itens de uma vez,
+              sem precisar rolar o carrinho item por item */}
+          {cart.length > 1 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 0', borderBottom: '1px solid var(--border-color)' }}>
+              <span style={{ fontSize: '10px', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>Aplicar a todos:</span>
+              <button
+                type="button"
+                className="btn"
+                style={{ padding: '5px 10px', fontSize: '11px', fontWeight: 600, background: 'var(--primary)', color: '#0b0914', flex: 1 }}
+                onClick={() => applyPriceTypeToAll('retail')}
+              >
+                Varejo
+              </button>
+              <button
+                type="button"
+                className="btn"
+                style={{ padding: '5px 10px', fontSize: '11px', fontWeight: 600, background: 'var(--secondary)', color: '#fff', flex: 1 }}
+                onClick={() => applyPriceTypeToAll('wholesale')}
+              >
+                Atacado
+              </button>
+            </div>
+          )}
+
           {/* Cart Item list */}
-          <div className="cart-items-list" style={{ flex: 1, overflowY: 'auto', padding: '10px 0' }}>
+          <div className="cart-items-list" style={{ flex: 1, overflowY: 'auto', padding: '6px 0' }}>
             {cart.length === 0 ? (
               <div style={{ height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', color: 'var(--text-muted)', padding: '20px' }}>
                 <i className="fa-solid fa-basket-shopping" style={{ fontSize: '36px', marginBottom: '10px', opacity: 0.3 }}></i>
@@ -694,69 +1028,68 @@ export const PDVView: React.FC<PDVViewProps> = ({
                   : item.product.wholesale_price;
 
                 return (
-                  <div key={idx} className="cart-item-row" style={{ display: 'flex', flexDirection: 'column', padding: '12px 0', borderBottom: '1px solid var(--border-color)' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '6px' }}>
-                      <div style={{ flex: 1, paddingRight: '8px' }}>
-                        <span style={{ fontWeight: 600, fontSize: '13px', display: 'block' }}>{item.product.name}</span>
-                        <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Estoque atual: {item.product.stock} un</span>
-                      </div>
+                  <div key={idx} className="cart-item-row" style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 0', borderBottom: '1px solid var(--border-color)' }}>
+                    <span
+                      style={{ fontWeight: 600, fontSize: '12px', flex: '1 1 auto', minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+                      title={item.product.name}
+                    >
+                      {item.product.name}
+                    </span>
+
+                    <div style={{ display: 'flex', background: 'rgba(255,255,255,0.05)', borderRadius: '5px', padding: '2px', flexShrink: 0 }}>
                       <button
-                        style={{ background: 'none', border: 'none', color: 'var(--danger)', cursor: 'pointer' }}
-                        onClick={() => removeFromCart(item.product.id)}
+                        type="button"
+                        className={`btn ${item.priceType === 'retail' ? 'btn-primary' : ''}`}
+                        style={{ padding: '4px 8px', fontSize: '10px', fontWeight: 600, minWidth: '48px', height: 'auto', background: item.priceType === 'retail' ? 'var(--primary)' : 'none' }}
+                        onClick={() => togglePriceType(item.product.id, 'retail')}
                       >
-                        <i className="fa-solid fa-xmark"></i>
+                        Varejo
+                      </button>
+                      <button
+                        type="button"
+                        className={`btn ${item.priceType === 'wholesale' ? 'btn-primary' : ''}`}
+                        style={{ padding: '4px 8px', fontSize: '10px', fontWeight: 600, minWidth: '48px', height: 'auto', background: item.priceType === 'wholesale' ? 'var(--secondary)' : 'none' }}
+                        onClick={() => togglePriceType(item.product.id, 'wholesale')}
+                      >
+                        Atacado
                       </button>
                     </div>
 
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <div style={{ display: 'flex', background: 'rgba(255,255,255,0.05)', borderRadius: '4px', padding: '2px' }}>
-                        <button
-                          type="button"
-                          className={`btn ${item.priceType === 'retail' ? 'btn-primary' : ''}`}
-                          style={{ padding: '3px 8px', fontSize: '9px', minWidth: '55px', height: 'auto', background: item.priceType === 'retail' ? 'var(--primary)' : 'none' }}
-                          onClick={() => togglePriceType(item.product.id, 'retail')}
-                        >
-                          Varejo
-                        </button>
-                        <button
-                          type="button"
-                          className={`btn ${item.priceType === 'wholesale' ? 'btn-primary' : ''}`}
-                          style={{ padding: '3px 8px', fontSize: '9px', minWidth: '55px', height: 'auto', background: item.priceType === 'wholesale' ? 'var(--secondary)' : 'none' }}
-                          onClick={() => togglePriceType(item.product.id, 'wholesale')}
-                        >
-                          Atacado
-                        </button>
-                      </div>
-
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                        <button
-                          type="button"
-                          className="btn"
-                          style={{ padding: '2px 6px', fontSize: '10px', background: 'rgba(255,255,255,0.05)' }}
-                          onClick={() => updateQuantity(item.product.id, item.quantity - 1)}
-                        >
-                          -
-                        </button>
-                        <input
-                          type="number"
-                          value={item.quantity}
-                          onChange={(e) => updateQuantity(item.product.id, parseInt(e.target.value) || 0)}
-                          style={{ width: '35px', textAlign: 'center', background: 'none', border: '1px solid var(--border-color)', color: 'white', fontSize: '12px', borderRadius: '4px', padding: '2px 0' }}
-                        />
-                        <button
-                          type="button"
-                          className="btn"
-                          style={{ padding: '2px 6px', fontSize: '10px', background: 'rgba(255,255,255,0.05)' }}
-                          onClick={() => updateQuantity(item.product.id, item.quantity + 1)}
-                        >
-                          +
-                        </button>
-                      </div>
-
-                      <span style={{ fontWeight: 600, fontSize: '13px' }}>
-                        {formatCurrency(activePrice * item.quantity)}
-                      </span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '3px', flexShrink: 0 }}>
+                      <button
+                        type="button"
+                        className="btn"
+                        style={{ padding: '1px 5px', fontSize: '10px', background: 'rgba(255,255,255,0.05)' }}
+                        onClick={() => updateQuantity(item.product.id, item.quantity - 1)}
+                      >
+                        -
+                      </button>
+                      <input
+                        type="number"
+                        value={item.quantity}
+                        onChange={(e) => updateQuantity(item.product.id, parseInt(e.target.value) || 0)}
+                        style={{ width: '28px', textAlign: 'center', background: 'none', border: '1px solid var(--border-color)', color: 'white', fontSize: '11px', borderRadius: '4px', padding: '1px 0' }}
+                      />
+                      <button
+                        type="button"
+                        className="btn"
+                        style={{ padding: '1px 5px', fontSize: '10px', background: 'rgba(255,255,255,0.05)' }}
+                        onClick={() => updateQuantity(item.product.id, item.quantity + 1)}
+                      >
+                        +
+                      </button>
                     </div>
+
+                    <span style={{ fontWeight: 600, fontSize: '12px', flexShrink: 0, minWidth: '62px', textAlign: 'right' }}>
+                      {formatCurrency(activePrice * item.quantity)}
+                    </span>
+
+                    <button
+                      style={{ background: 'none', border: 'none', color: 'var(--danger)', cursor: 'pointer', flexShrink: 0, padding: 0 }}
+                      onClick={() => removeFromCart(item.product.id)}
+                    >
+                      <i className="fa-solid fa-xmark"></i>
+                    </button>
                   </div>
                 );
               })
@@ -883,7 +1216,7 @@ export const PDVView: React.FC<PDVViewProps> = ({
                   </label>
                   <button
                     type="button"
-                    onClick={onNavigateToClients}
+                    onClick={openNewClientModal}
                     style={{ background: 'none', border: 'none', color: 'var(--primary)', fontSize: '10px', cursor: 'pointer' }}
                   >
                     + Novo Cliente
