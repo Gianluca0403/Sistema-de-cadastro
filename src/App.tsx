@@ -13,7 +13,7 @@ import { MovementsView } from './components/MovementsView';
 import { SettingsView } from './components/SettingsView';
 import { LoginView } from './components/LoginView';
 import { ReceivablesView } from './components/ReceivablesView';
-import { ExchangeView } from './components/ExchangeView';
+import { ExchangeView } from './components/Exchangeview';
 
 const App: React.FC = () => {
   const [userEmail, setUserEmail] = useState<string | null>(null);
