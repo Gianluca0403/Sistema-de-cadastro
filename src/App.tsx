@@ -1,8 +1,27 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { dbService, isSupabaseConfigured } from './supabaseClient';
-import { Product, Customer, Sale, StockMovement, SaleItem, SaleInstallment } from './types';
+import React, {
+  useState,
+  useEffect,
+  useCallback
+} from 'react';
 
-// Import Components
+import {
+  dbService,
+  isSupabaseConfigured
+} from './supabaseClient';
+
+import {
+  Product,
+  Customer,
+  Sale,
+  StockMovement,
+  SaleItem,
+  SaleInstallment
+} from './types';
+
+// ============================================================
+// COMPONENTS
+// ============================================================
+
 import { Sidebar } from './components/Sidebar';
 import { Header } from './components/Header';
 import { DashboardView } from './components/DashboardView';
@@ -16,382 +35,942 @@ import { ReceivablesView } from './components/ReceivablesView';
 import { ExchangeView } from './components/Exchangeview';
 
 const App: React.FC = () => {
-  const [userEmail, setUserEmail] = useState<string | null>(null);
-  const [currentView, setCurrentView] = useState<string>('dashboard');
-  const [isInitializing, setIsInitializing] = useState(true);
+  // ==========================================================
+  // AUTH
+  // ==========================================================
 
-  // Core Data Lists
-  const [products, setProducts] = useState<Product[]>([]);
-  const [clients, setClients] = useState<Customer[]>([]);
-  const [sales, setSales] = useState<Sale[]>([]);
-  const [movements, setMovements] = useState<StockMovement[]>([]);
-  const [installments, setInstallments] = useState<SaleInstallment[]>([]);
-  const [activeCashRegisterId, setActiveCashRegisterId] = useState<string | null>(null);
+  const [
+    userEmail,
+    setUserEmail
+  ] = useState<string | null>(null);
 
-  // Connectivity type
-  const dbType = isSupabaseConfigured ? 'Supabase' : 'Mock LocalStorage';
+  // ==========================================================
+  // NAVEGAÇÃO
+  // ==========================================================
 
-  // --- REFRESH DATA FUNCTION ---
-  const refreshAllData = useCallback(async () => {
-    try {
-      if (
-        !dbService ||
-        typeof dbService.products?.getAll !== 'function' ||
-        typeof dbService.customers?.getAll !== 'function' ||
-        typeof dbService.sales?.getAll !== 'function' ||
-        typeof dbService.movements?.getAll !== 'function'
-      ) {
-        console.error('dbService não está pronto ainda.');
-        return;
-      }
+  const [
+    currentView,
+    setCurrentView
+  ] = useState<string>('dashboard');
 
-      // Dados essenciais primeiro (produtos, clientes, vendas, movimentos).
-      // Se qualquer um desses falhar, é importante que o erro apareça — por isso ainda usamos Promise.all aqui.
-      const [prods, clis, transactions, logs] = await Promise.all([
-        dbService.products.getAll(),
-        dbService.customers.getAll(),
-        dbService.sales.getAll(),
-        dbService.movements.getAll(),
-      ]);
+  const [
+    isInitializing,
+    setIsInitializing
+  ] = useState(true);
 
-      setProducts(prods);
-      setClients(clis);
-      setSales(transactions);
-      setMovements(logs);
+  // ==========================================================
+  // DADOS
+  // ==========================================================
 
-      // Dados de parcelas/caixa são carregados separadamente e de forma tolerante a falhas:
-      // se a tabela de parcelas ou a sessão de caixa derem erro, isso NÃO deve
-      // impedir a exibição de produtos, clientes e vendas.
+  const [
+    products,
+    setProducts
+  ] = useState<Product[]>([]);
+
+  const [
+    clients,
+    setClients
+  ] = useState<Customer[]>([]);
+
+  const [
+    sales,
+    setSales
+  ] = useState<Sale[]>([]);
+
+  const [
+    movements,
+    setMovements
+  ] = useState<StockMovement[]>([]);
+
+  const [
+    installments,
+    setInstallments
+  ] = useState<SaleInstallment[]>([]);
+
+  // ==========================================================
+  // CAIXA
+  // ==========================================================
+
+  const [
+    activeCashRegisterId,
+    setActiveCashRegisterId
+  ] = useState<string | null>(null);
+
+  // ==========================================================
+  // VENDA SELECIONADA PARA TROCA
+  //
+  // Quando o usuário clicar em "Trocar" no histórico,
+  // guardamos a venda aqui e abrimos o ExchangeView.
+  // ==========================================================
+
+  const [
+    selectedExchangeSale,
+    setSelectedExchangeSale
+  ] = useState<Sale | null>(null);
+
+  // ==========================================================
+  // TIPO DO BANCO
+  // ==========================================================
+
+  const dbType =
+    isSupabaseConfigured
+      ? 'Supabase'
+      : 'Mock LocalStorage';
+
+  // ==========================================================
+  // REFRESH DOS DADOS
+  // ==========================================================
+
+  const refreshAllData =
+    useCallback(async () => {
       try {
-        const installmentsList = await dbService.installments.getAll();
-        setInstallments(installmentsList);
-      } catch (error) {
-        console.error('Erro ao buscar parcelas (contas a receber):', error);
-      }
+        if (
+          !dbService ||
+          typeof dbService.products?.getAll !==
+            'function' ||
+          typeof dbService.customers?.getAll !==
+            'function' ||
+          typeof dbService.sales?.getAll !==
+            'function' ||
+          typeof dbService.movements?.getAll !==
+            'function'
+        ) {
+          console.error(
+            'dbService não está pronto ainda.'
+          );
 
-      try {
-        const activeSession = await dbService.cash.getActiveSession();
-        setActiveCashRegisterId(activeSession?.id || null);
-      } catch (error) {
-        console.error('Erro ao buscar sessão de caixa ativa:', error);
-      }
-    } catch (error) {
-      console.error('Error fetching system data:', error);
-    }
-  }, []);
+          return;
+        }
 
-  // 1. Monitor Auth Changes
+        const [
+          prods,
+          clis,
+          transactions,
+          logs
+        ] = await Promise.all([
+          dbService.products.getAll(),
+          dbService.customers.getAll(),
+          dbService.sales.getAll(),
+          dbService.movements.getAll()
+        ]);
+
+        setProducts(prods);
+        setClients(clis);
+        setSales(transactions);
+        setMovements(logs);
+
+        // ======================================================
+        // PARCELAS
+        // ======================================================
+
+        try {
+          const installmentsList =
+            await dbService.installments.getAll();
+
+          setInstallments(
+            installmentsList
+          );
+        } catch (error) {
+          console.error(
+            'Erro ao buscar parcelas (contas a receber):',
+            error
+          );
+        }
+
+        // ======================================================
+        // CAIXA
+        // ======================================================
+
+        try {
+          const activeSession =
+            await dbService.cash.getActiveSession();
+
+          setActiveCashRegisterId(
+            activeSession?.id || null
+          );
+        } catch (error) {
+          console.error(
+            'Erro ao buscar sessão de caixa ativa:',
+            error
+          );
+        }
+      } catch (error) {
+        console.error(
+          'Error fetching system data:',
+          error
+        );
+      }
+    }, []);
+
+  // ==========================================================
+  // AUTH LISTENER
+  // ==========================================================
+
   useEffect(() => {
-    const unsubscribe = dbService.auth.onAuthStateChange(async (user) => {
-      if (user && user.email) {
-        setUserEmail(user.email);
-      } else {
-        setUserEmail(null);
-      }
-      setIsInitializing(false);
-    });
+    const unsubscribe =
+      dbService.auth.onAuthStateChange(
+        async (user) => {
+          if (
+            user &&
+            user.email
+          ) {
+            setUserEmail(
+              user.email
+            );
+          } else {
+            setUserEmail(null);
+          }
 
-    return () => unsubscribe?.();
+          setIsInitializing(false);
+        }
+      );
+
+    return () =>
+      unsubscribe?.();
   }, []);
 
-  // 2. Carrega dados quando usuário estiver pronto
+  // ==========================================================
+  // CARREGAR DADOS APÓS LOGIN
+  // ==========================================================
+
   useEffect(() => {
     if (!userEmail) return;
-    refreshAllData();
-  }, [userEmail, refreshAllData]);
 
-  // Handle Login Event
-  const handleLoginSuccess = (email: string) => {
+    refreshAllData();
+  }, [
+    userEmail,
+    refreshAllData
+  ]);
+
+  // ==========================================================
+  // LOGIN
+  // ==========================================================
+
+  const handleLoginSuccess = (
+    email: string
+  ) => {
     setUserEmail(email);
     refreshAllData();
   };
 
-  // Handle Logout
-  const handleLogout = async () => {
-    if (window.confirm('Tem certeza que deseja sair do sistema?')) {
-      await dbService.auth.signOut();
-      setUserEmail(null);
-      setCurrentView('dashboard');
-    }
-  };
+  // ==========================================================
+  // LOGOUT
+  // ==========================================================
 
-  // ==========================================================================
-  // PRODUCT CALLBACKS
-  // ==========================================================================
-  const handleCreateProduct = async (productData: Omit<Product, 'id' | 'created_at' | 'updated_at'>, file?: File) => {
-    await dbService.products.create(productData, file);
-    await refreshAllData();
-  };
+  const handleLogout =
+    async () => {
+      if (
+        window.confirm(
+          'Tem certeza que deseja sair do sistema?'
+        )
+      ) {
+        await dbService.auth.signOut();
 
-  const handleUpdateProduct = async (id: string, productData: Partial<Product>, file?: File) => {
-    await dbService.products.update(id, productData, file);
-    await refreshAllData();
-  };
+        setUserEmail(null);
 
-  const handleDeleteProduct = async (id: string) => {
-    await dbService.products.delete(id);
-    await refreshAllData();
-  };
+        setCurrentView(
+          'dashboard'
+        );
 
-  const handleAddStockMovement = async (product_id: string, type: 'Entrada' | 'Saída manual' | 'Ajuste', quantity: number, obs: string) => {
-    await dbService.movements.create({
-      product_id,
-      type,
-      quantity,
-      user_email: userEmail || 'sistema@jaja.com',
-      observation: obs
-    });
-    await refreshAllData();
-  };
+        setSelectedExchangeSale(
+          null
+        );
+      }
+    };
 
-  // ==========================================================================
-  // CLIENT CALLBACKS
-  // ==========================================================================
-  const handleCreateClient = async (clientData: Omit<Customer, 'id' | 'created_at'>): Promise<Customer> => {
-    const newClient = await dbService.customers.create(clientData);
-    await refreshAllData();
-    return newClient;
-  };
+  // ==========================================================
+  // PRODUCTS
+  // ==========================================================
 
-  const handleUpdateClient = async (id: string, clientData: Partial<Customer>) => {
-    await dbService.customers.update(id, clientData);
-    await refreshAllData();
-  };
+  const handleCreateProduct =
+    async (
+      productData: Omit<
+        Product,
+        'id' | 'created_at' | 'updated_at'
+      >,
+      file?: File
+    ) => {
+      await dbService.products.create(
+        productData,
+        file
+      );
 
-  const handleDeleteClient = async (id: string) => {
-    await dbService.customers.delete(id);
-    await refreshAllData();
-  };
+      await refreshAllData();
+    };
 
-  const handlePayDebt = async (client: Customer, amount: number, paymentMethod: string, obs: string) => {
-    await dbService.customers.adjustDebt(client.id, -amount);
+  const handleUpdateProduct =
+    async (
+      id: string,
+      productData: Partial<Product>,
+      file?: File
+    ) => {
+      await dbService.products.update(
+        id,
+        productData,
+        file
+      );
 
-    await dbService.sales.create({
-      total_price: amount,
-      discount: 0,
-      payment_method: paymentMethod as any,
-      installments: 1,
-      customer_id: client.id,
-      user_email: userEmail || 'sistema@jaja.com',
-      cash_register_id: activeCashRegisterId
-    }, []);
+      await refreshAllData();
+    };
 
-    await refreshAllData();
-  };
+  const handleDeleteProduct =
+    async (id: string) => {
+      await dbService.products.delete(
+        id
+      );
 
-  // ==========================================================================
-  // TRANSACTION / SALE CALLBACKS
-  // ==========================================================================
-  const handleSubmitSale = async (
-    saleData: {
-      total_price: number;
-      discount: number;
-      payment_method: 'PIX' | 'Cartão' | 'Dinheiro' | 'Crediário' | 'Boleto';
-      installments?: number | null;
-      due_dates?: string[] | null;
-      customer_id: string | null;
-    },
-    items: Array<{
-      product_id: string;
-      quantity: number;
-      price: number;
-      cost_price: number;
-    }>
-  ) => {
-    const { due_dates, ...restSaleData } = saleData;
-    await dbService.sales.create({
-      ...restSaleData,
-      installments: restSaleData.installments ?? 1,
-      user_email: userEmail || 'sistema@jaja.com'
-    }, items, due_dates || undefined);
-    await refreshAllData();
-  };
+      await refreshAllData();
+    };
 
-  const handleGetSaleItems = async (saleId: string): Promise<SaleItem[]> => {
-    return await dbService.sales.getItems(saleId);
-  };
+  const handleAddStockMovement =
+    async (
+      product_id: string,
+      type:
+        | 'Entrada'
+        | 'Saída manual'
+        | 'Ajuste',
+      quantity: number,
+      obs: string
+    ) => {
+      await dbService.movements.create(
+        {
+          product_id,
+          type,
+          quantity,
+          user_email:
+            userEmail ||
+            'sistema@jaja.com',
+          observation: obs
+        }
+      );
 
-  const handleMarkInstallmentAsPaid = async (
-    installment: SaleInstallment,
-    paidAmount: number,
-    paymentMethod: 'PIX' | 'Cartão' | 'Dinheiro'
-  ) => {
-    await dbService.installments.markAsPaid(installment, paidAmount, paymentMethod, activeCashRegisterId);
-    await refreshAllData();
-  };
+      await refreshAllData();
+    };
 
-  const handleCreateExchange = async (params: {
-    original_sale_id: string | null;
-    customer_id: string | null;
-    returnedItems: Array<{ product_id: string; quantity: number; price: number }>;
-    newItems: Array<{ product_id: string; quantity: number; price: number }>;
-    resolution: 'sem_diferenca' | 'pago_pelo_cliente' | 'devolvido_ao_cliente' | 'credito_cliente' | 'divida_cliente';
-    payment_method: 'PIX' | 'Cartão' | 'Dinheiro' | null;
-  }) => {
-    await dbService.exchanges.create({
-      ...params,
-      user_email: userEmail || 'sistema@jaja.com',
-      cash_register_id: activeCashRegisterId
-    });
-    await refreshAllData();
-  };
+  // ==========================================================
+  // CLIENTS
+  // ==========================================================
 
-  const handleDeleteSale = async (saleId: string) => {
-    await dbService.sales.delete(saleId);
-    await refreshAllData();
-  };
+  const handleCreateClient =
+    async (
+      clientData: Omit<
+        Customer,
+        'id' | 'created_at'
+      >
+    ): Promise<Customer> => {
+      const newClient =
+        await dbService.customers.create(
+          clientData
+        );
 
-  // ==========================================================================
-  // DATA MANAGEMENT FUNCTIONS
-  // ==========================================================================
-  const handleClearAllData = () => {
-    dbService.clearAllData();
-  };
+      await refreshAllData();
 
-  const handleImportBackup = (jsonString: string): boolean => {
-    return dbService.importDatabase(jsonString);
-  };
+      return newClient;
+    };
 
-  const handleExportBackup = () => {
-    dbService.exportDatabase();
-  };
+  const handleUpdateClient =
+    async (
+      id: string,
+      clientData: Partial<Customer>
+    ) => {
+      await dbService.customers.update(
+        id,
+        clientData
+      );
 
-  // --- NAVIGATION QUICK TRIGGERS ---
-  const handleQuickSaleTrigger = () => {
-    setCurrentView('pdv');
-  };
+      await refreshAllData();
+    };
 
-  const handleNavigateToStock = () => {
-    setCurrentView('estoque');
-  };
+  const handleDeleteClient =
+    async (id: string) => {
+      await dbService.customers.delete(
+        id
+      );
 
-  const handleNavigateToClients = () => {
-    setCurrentView('clientes');
-  };
+      await refreshAllData();
+    };
 
-  // Show Loading indicator on initialization
+  const handlePayDebt =
+    async (
+      client: Customer,
+      amount: number,
+      paymentMethod: string,
+      obs: string
+    ) => {
+      await dbService.customers.adjustDebt(
+        client.id,
+        -amount
+      );
+
+      await dbService.sales.create(
+        {
+          total_price: amount,
+          discount: 0,
+          payment_method:
+            paymentMethod as any,
+          installments: 1,
+          customer_id: client.id,
+          user_email:
+            userEmail ||
+            'sistema@jaja.com',
+          cash_register_id:
+            activeCashRegisterId
+        },
+        []
+      );
+
+      await refreshAllData();
+    };
+
+  // ==========================================================
+  // VENDAS
+  // ==========================================================
+
+  const handleSubmitSale =
+    async (
+      saleData: {
+        total_price: number;
+        discount: number;
+        payment_method:
+          | 'PIX'
+          | 'Cartão'
+          | 'Dinheiro'
+          | 'Crediário'
+          | 'Boleto';
+        installments?:
+          | number
+          | null;
+        due_dates?:
+          | string[]
+          | null;
+        customer_id:
+          | string
+          | null;
+      },
+      items: Array<{
+        product_id: string;
+        quantity: number;
+        price: number;
+        cost_price: number;
+      }>
+    ) => {
+      const {
+        due_dates,
+        ...restSaleData
+      } = saleData;
+
+      await dbService.sales.create(
+        {
+          ...restSaleData,
+          installments:
+            restSaleData.installments ??
+            1,
+          user_email:
+            userEmail ||
+            'sistema@jaja.com'
+        },
+        items,
+        due_dates ||
+          undefined
+      );
+
+      await refreshAllData();
+    };
+
+  // ==========================================================
+  // BUSCAR ITENS DA VENDA
+  // ==========================================================
+
+  const handleGetSaleItems =
+    async (
+      saleId: string
+    ): Promise<SaleItem[]> => {
+      return await dbService.sales.getItems(
+        saleId
+      );
+    };
+
+  // ==========================================================
+  // PARCELAS
+  // ==========================================================
+
+  const handleMarkInstallmentAsPaid =
+    async (
+      installment: SaleInstallment,
+      paidAmount: number,
+      paymentMethod:
+        | 'PIX'
+        | 'Cartão'
+        | 'Dinheiro'
+    ) => {
+      await dbService.installments.markAsPaid(
+        installment,
+        paidAmount,
+        paymentMethod,
+        activeCashRegisterId
+      );
+
+      await refreshAllData();
+    };
+
+  // ==========================================================
+  // TROCA
+  // ==========================================================
+
+  const handleCreateExchange =
+    async (params: {
+      original_sale_id:
+        | string
+        | null;
+
+      customer_id:
+        | string
+        | null;
+
+      returnedItems: Array<{
+        product_id: string;
+        quantity: number;
+        price: number;
+      }>;
+
+      newItems: Array<{
+        product_id: string;
+        quantity: number;
+        price: number;
+      }>;
+
+      resolution:
+        | 'sem_diferenca'
+        | 'pago_pelo_cliente'
+        | 'devolvido_ao_cliente'
+        | 'credito_cliente'
+        | 'divida_cliente';
+
+      payment_method:
+        | 'PIX'
+        | 'Cartão'
+        | 'Dinheiro'
+        | null;
+    }) => {
+      await dbService.exchanges.create(
+        {
+          ...params,
+
+          user_email:
+            userEmail ||
+            'sistema@jaja.com',
+
+          cash_register_id:
+            activeCashRegisterId
+        }
+      );
+
+      await refreshAllData();
+    };
+
+  // ==========================================================
+  // EXCLUIR VENDA
+  // ==========================================================
+
+  const handleDeleteSale =
+    async (saleId: string) => {
+      await dbService.sales.delete(
+        saleId
+      );
+
+      await refreshAllData();
+    };
+
+  // ==========================================================
+  // NAVEGAR PARA TROCA
+  // ==========================================================
+
+  const handleNavigateToExchange =
+    (sale?: Sale) => {
+      setSelectedExchangeSale(
+        sale || null
+      );
+
+      setCurrentView('trocas');
+    };
+
+  // ==========================================================
+  // LIMPAR VENDA SELECIONADA DA TROCA
+  // ==========================================================
+
+  const handleClearExchangeSale =
+    () => {
+      setSelectedExchangeSale(
+        null
+      );
+    };
+
+  // ==========================================================
+  // CONFIGURAÇÕES
+  // ==========================================================
+
+  const handleClearAllData =
+    () => {
+      dbService.clearAllData();
+    };
+
+  const handleImportBackup =
+    (jsonString: string): boolean => {
+      return dbService.importDatabase(
+        jsonString
+      );
+    };
+
+  const handleExportBackup =
+    () => {
+      dbService.exportDatabase();
+    };
+
+  // ==========================================================
+  // NAVEGAÇÃO RÁPIDA
+  // ==========================================================
+
+  const handleQuickSaleTrigger =
+    () => {
+      setCurrentView('pdv');
+    };
+
+  const handleNavigateToStock =
+    () => {
+      setCurrentView('estoque');
+    };
+
+  const handleNavigateToClients =
+    () => {
+      setCurrentView('clientes');
+    };
+
+  // ==========================================================
+  // LOADING
+  // ==========================================================
+
   if (isInitializing) {
     return (
-      <div style={{
-        display: 'flex',
-        flexDirection: 'column',
-        minHeight: '100vh',
-        alignItems: 'center',
-        justifyContent: 'center',
-        background: 'linear-gradient(135deg, #0b0914 0%, #151124 100%)',
-        color: 'var(--text-primary)'
-      }}>
-        <i className="fa-solid fa-wand-magic-sparkles fa-spin" style={{ fontSize: '32px', color: 'var(--primary)', marginBottom: '15px' }}></i>
-        <span>Iniciando o Sistema JAJA...</span>
+      <div
+        style={{
+          display: 'flex',
+          flexDirection:
+            'column',
+          minHeight: '100vh',
+          alignItems:
+            'center',
+          justifyContent:
+            'center',
+          background:
+            'linear-gradient(135deg, #0b0914 0%, #151124 100%)',
+          color:
+            'var(--text-primary)'
+        }}
+      >
+        <i
+          className="fa-solid fa-wand-magic-sparkles fa-spin"
+          style={{
+            fontSize: '32px',
+            color:
+              'var(--primary)',
+            marginBottom:
+              '15px'
+          }}
+        />
+
+        <span>
+          Iniciando o Sistema JAJA...
+        </span>
       </div>
     );
   }
 
-  // Enforce Authenticated session
+  // ==========================================================
+  // LOGIN
+  // ==========================================================
+
   if (!userEmail) {
-    return <LoginView onLoginSuccess={handleLoginSuccess} />;
+    return (
+      <LoginView
+        onLoginSuccess={
+          handleLoginSuccess
+        }
+      />
+    );
   }
+
+  // ==========================================================
+  // APP
+  // ==========================================================
 
   return (
     <div id="app-layout">
       <Sidebar
-        currentView={currentView}
-        onViewChange={setCurrentView}
+        currentView={
+          currentView
+        }
+        onViewChange={
+          (view) => {
+            // Se sair da tela de troca,
+            // limpa a venda pré-selecionada.
+            if (view !== 'trocas') {
+              handleClearExchangeSale();
+            }
+
+            setCurrentView(view);
+          }
+        }
         dbType={dbType}
       />
 
       <main id="main-content">
         <Header
-          currentView={currentView}
-          userEmail={userEmail}
-          onLogout={handleLogout}
-          onQuickSale={handleQuickSaleTrigger}
+          currentView={
+            currentView
+          }
+          userEmail={
+            userEmail
+          }
+          onLogout={
+            handleLogout
+          }
+          onQuickSale={
+            handleQuickSaleTrigger
+          }
         />
 
-        <div className="content-body" id="view-container">
-          {currentView === 'dashboard' && (
+        <div
+          className="content-body"
+          id="view-container"
+        >
+          {/* ==================================================
+              DASHBOARD
+          ================================================== */}
+
+          {currentView ===
+            'dashboard' && (
             <DashboardView
-              products={products}
-              sales={sales}
-              clients={clients}
-              onNavigateToStock={handleNavigateToStock}
-              onNavigateToPDV={handleQuickSaleTrigger}
+              products={
+                products
+              }
+              sales={
+                sales
+              }
+              clients={
+                clients
+              }
+              onNavigateToStock={
+                handleNavigateToStock
+              }
+              onNavigateToPDV={
+                handleQuickSaleTrigger
+              }
             />
           )}
 
-          {currentView === 'estoque' && (
+          {/* ==================================================
+              ESTOQUE
+          ================================================== */}
+
+          {currentView ===
+            'estoque' && (
             <ProductsView
-              products={products}
-              onCreateProduct={handleCreateProduct}
-              onUpdateProduct={handleUpdateProduct}
-              onDeleteProduct={handleDeleteProduct}
-              onAddStockMovement={handleAddStockMovement}
-              userEmail={userEmail}
+              products={
+                products
+              }
+              onCreateProduct={
+                handleCreateProduct
+              }
+              onUpdateProduct={
+                handleUpdateProduct
+              }
+              onDeleteProduct={
+                handleDeleteProduct
+              }
+              onAddStockMovement={
+                handleAddStockMovement
+              }
+              userEmail={
+                userEmail
+              }
             />
           )}
 
-          {/* O PDV fica sempre montado (mesmo quando escondido) para que o carrinho,
-              descontos e forma de pagamento NÃO se percam quando o usuário navega
-              para outra tela (ex: Clientes) e depois volta. */}
-          <div style={{ display: currentView === 'pdv' ? 'block' : 'none' }}>
+          {/* ==================================================
+              PDV
+          ================================================== */}
+
+          <div
+            style={{
+              display:
+                currentView ===
+                'pdv'
+                  ? 'block'
+                  : 'none'
+            }}
+          >
             <PDVView
-              products={products}
-              clients={clients}
-              onSubmitSale={handleSubmitSale}
-              onNavigateToClients={handleNavigateToClients}
-              onCreateClient={handleCreateClient}
-              isActive={currentView === 'pdv'}
+              products={
+                products
+              }
+              clients={
+                clients
+              }
+              onSubmitSale={
+                handleSubmitSale
+              }
+              onNavigateToClients={
+                handleNavigateToClients
+              }
+              onCreateClient={
+                handleCreateClient
+              }
+              isActive={
+                currentView ===
+                'pdv'
+              }
             />
           </div>
 
-          {currentView === 'clientes' && (
+          {/* ==================================================
+              CLIENTES
+          ================================================== */}
+
+          {currentView ===
+            'clientes' && (
             <ClientsView
-              clients={clients}
-              onCreateClient={handleCreateClient}
-              onUpdateClient={handleUpdateClient}
-              onDeleteClient={handleDeleteClient}
-              onPayDebt={handlePayDebt}
+              clients={
+                clients
+              }
+              onCreateClient={
+                handleCreateClient
+              }
+              onUpdateClient={
+                handleUpdateClient
+              }
+              onDeleteClient={
+                handleDeleteClient
+              }
+              onPayDebt={
+                handlePayDebt
+              }
             />
           )}
 
-          {currentView === 'movimentacoes' && (
+          {/* ==================================================
+              HISTÓRICO / MOVIMENTAÇÕES
+          ================================================== */}
+
+          {currentView ===
+            'movimentacoes' && (
             <MovementsView
-              movements={movements}
-              sales={sales}
-              onGetSaleItems={handleGetSaleItems}
-              onDeleteSale={handleDeleteSale}
+              movements={
+                movements
+              }
+              sales={
+                sales
+              }
+              onGetSaleItems={
+                handleGetSaleItems
+              }
+              onDeleteSale={
+                handleDeleteSale
+              }
+              onNavigateToExchange={
+                handleNavigateToExchange
+              }
             />
           )}
 
-          {currentView === 'recebiveis' && (
+          {/* ==================================================
+              CONTAS A RECEBER
+          ================================================== */}
+
+          {currentView ===
+            'recebiveis' && (
             <ReceivablesView
-              installments={installments}
-              clients={clients}
-              hasOpenCashRegister={!!activeCashRegisterId}
-              onMarkAsPaid={handleMarkInstallmentAsPaid}
-              onPayDebt={handlePayDebt}
+              installments={
+                installments
+              }
+              clients={
+                clients
+              }
+              hasOpenCashRegister={
+                !!activeCashRegisterId
+              }
+              onMarkAsPaid={
+                handleMarkInstallmentAsPaid
+              }
+              onPayDebt={
+                handlePayDebt
+              }
             />
           )}
 
-          {currentView === 'trocas' && (
+          {/* ==================================================
+              TROCAS
+          ================================================== */}
+
+          {currentView ===
+            'trocas' && (
             <ExchangeView
-              sales={sales}
-              products={products}
-              clients={clients}
-              hasOpenCashRegister={!!activeCashRegisterId}
-              activeCashRegisterId={activeCashRegisterId}
-              userEmail={userEmail}
-              onGetSaleItems={handleGetSaleItems}
-              onCreateExchange={handleCreateExchange}
+              sales={
+                sales
+              }
+              products={
+                products
+              }
+              clients={
+                clients
+              }
+              hasOpenCashRegister={
+                !!activeCashRegisterId
+              }
+              activeCashRegisterId={
+                activeCashRegisterId
+              }
+              userEmail={
+                userEmail
+              }
+
+              /*
+               * ESSA É A PARTE QUE FAZ A VENDA
+               * DO HISTÓRICO ENTRAR AUTOMATICAMENTE
+               * NA TELA DE TROCA.
+               */
+              initialSale={
+                selectedExchangeSale
+              }
+
+              onGetSaleItems={
+                handleGetSaleItems
+              }
+
+              onCreateExchange={
+                handleCreateExchange
+              }
             />
           )}
 
-          {currentView === 'configuracoes' && (
+          {/* ==================================================
+              CONFIGURAÇÕES
+          ================================================== */}
+
+          {currentView ===
+            'configuracoes' && (
             <SettingsView
-              dbType={dbType}
-              onClearAllData={handleClearAllData}
-              onImportBackup={handleImportBackup}
-              onExportBackup={handleExportBackup}
+              dbType={
+                dbType
+              }
+              onClearAllData={
+                handleClearAllData
+              }
+              onImportBackup={
+                handleImportBackup
+              }
+              onExportBackup={
+                handleExportBackup
+              }
             />
           )}
         </div>
