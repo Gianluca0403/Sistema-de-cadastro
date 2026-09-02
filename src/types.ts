@@ -7,7 +7,15 @@ export interface Category {
 export interface Product {
   id: string;
   name: string;
-  barcode: string;
+
+  // Mantido para compatibilidade com partes antigas do sistema.
+  // Não é mais utilizado no cadastro de produtos.
+  barcode?: string | null;
+
+  // NOVO CAMPO
+  // Exemplos: "100 ml", "80 ml", "473 ml", "30 g", "1 L"
+  volume: string | null;
+
   photo_url: string | null;
   category_id: string;
   stock: number;
@@ -18,7 +26,7 @@ export interface Product {
   description: string | null;
   created_at?: string;
   updated_at?: string;
-  category_name?: string; // resolved locally or via join
+  category_name?: string;
 }
 
 export interface Reseller {
@@ -29,7 +37,7 @@ export interface Reseller {
   city: string;
   notes: string;
   created_at?: string;
-  total_bought?: number; // computed attribute
+  total_bought?: number;
 }
 
 export interface Customer {
@@ -37,15 +45,15 @@ export interface Customer {
   name: string;
   phone: string;
   whatsapp: string;
-  birthdate: string | null; // YYYY-MM-DD
+  birthdate: string | null;
   debt: number;
   credit_balance: number;
   notes: string;
   is_reseller: boolean;
   reseller_id: string | null;
   created_at?: string;
-  total_spent?: number; // computed
-  last_purchase_date?: string | null; // computed
+  total_spent?: number;
+  last_purchase_date?: string | null;
 }
 
 export interface CashRegister {
@@ -65,7 +73,11 @@ export interface CashMovement {
   type: 'entrada' | 'saida';
   amount: number;
   description: string;
-  payment_method: 'PIX' | 'Cartão' | 'Dinheiro' | null;
+  payment_method:
+    | 'PIX'
+    | 'Cartão'
+    | 'Dinheiro'
+    | null;
   created_at?: string;
 }
 
@@ -74,12 +86,17 @@ export interface Sale {
   created_at: string;
   total_price: number;
   discount: number;
-  payment_method: 'PIX' | 'Cartão' | 'Dinheiro' | 'Boleto' | 'Crediário';
+  payment_method:
+    | 'PIX'
+    | 'Cartão'
+    | 'Dinheiro'
+    | 'Boleto'
+    | 'Crediário';
   installments?: number | null;
   customer_id: string | null;
   user_email: string;
   cash_register_id: string | null;
-  customer_name?: string | null; // resolved locally
+  customer_name?: string | null;
   items?: SaleItem[];
 }
 
@@ -96,7 +113,12 @@ export interface SaleItem {
 export interface StockMovement {
   id: string;
   product_id: string;
-  type: 'Entrada' | 'Saída manual' | 'Ajuste' | 'Venda' | 'Estorno de Venda';
+  type:
+    | 'Entrada'
+    | 'Saída manual'
+    | 'Ajuste'
+    | 'Venda'
+    | 'Estorno de Venda';
   quantity: number;
   user_email: string;
   observation: string | null;
@@ -104,23 +126,28 @@ export interface StockMovement {
   product_name?: string;
 }
 
-// Parcela de uma venda no Boleto (Contas a Receber)
 export interface SaleInstallment {
   id: string;
   sale_id: string;
   installment_number: number;
   amount: number;
-  due_date: string; // YYYY-MM-DD
-  status: 'pendente' | 'pago' | 'atrasado';
+  due_date: string;
+  status:
+    | 'pendente'
+    | 'pago'
+    | 'atrasado';
   paid_at: string | null;
   paid_amount: number | null;
-  payment_method: 'PIX' | 'Cartão' | 'Dinheiro' | null;
+  payment_method:
+    | 'PIX'
+    | 'Cartão'
+    | 'Dinheiro'
+    | null;
   created_at?: string;
-  customer_name?: string | null; // resolved locally
-  customer_id?: string | null; // resolved locally
+  customer_name?: string | null;
+  customer_id?: string | null;
 }
 
-// Um item devolvido ou recebido dentro de uma troca
 export interface ExchangeItem {
   id: string;
   exchange_id: string;
@@ -128,35 +155,46 @@ export interface ExchangeItem {
   product_id: string;
   quantity: number;
   price: number;
-  product_name?: string; // resolved locally
+  product_name?: string;
 }
 
-// Registro de uma troca de produtos
 export interface Exchange {
   id: string;
   original_sale_id: string | null;
   customer_id: string | null;
   total_returned: number;
   total_new: number;
-  price_difference: number; // total_new - total_returned
-  resolution: 'sem_diferenca' | 'pago_pelo_cliente' | 'devolvido_ao_cliente' | 'credito_cliente' | 'divida_cliente';
-  payment_method: 'PIX' | 'Cartão' | 'Dinheiro' | null;
+  price_difference: number;
+  resolution:
+    | 'sem_diferenca'
+    | 'pago_pelo_cliente'
+    | 'devolvido_ao_cliente'
+    | 'credito_cliente'
+    | 'divida_cliente';
+  payment_method:
+    | 'PIX'
+    | 'Cartão'
+    | 'Dinheiro'
+    | null;
   user_email: string;
   cash_register_id: string | null;
   created_at: string;
-  customer_name?: string | null; // resolved locally
+  customer_name?: string | null;
   items?: ExchangeItem[];
 }
 
-// Uma conta a pagar (ex: fornecedor, aluguel, produto comprado a prazo)
 export interface Payable {
   id: string;
   description: string;
   amount: number;
-  due_date: string; // YYYY-MM-DD
+  due_date: string;
   status: 'pendente' | 'pago';
   paid_at: string | null;
-  payment_method: 'PIX' | 'Cartão' | 'Dinheiro' | null;
+  payment_method:
+    | 'PIX'
+    | 'Cartão'
+    | 'Dinheiro'
+    | null;
   cash_register_id: string | null;
   user_email: string;
   created_at?: string;
