@@ -1,207 +1,546 @@
-import React, { useState, useMemo } from 'react';
-import { StockMovement, Sale, SaleItem } from '../types';
+import React, { useMemo, useState } from 'react';
+
+import {
+  StockMovement,
+  Sale,
+  SaleItem
+} from '../types';
 
 interface MovementsViewProps {
   movements: StockMovement[];
   sales: Sale[];
-  onGetSaleItems: (saleId: string) => Promise<SaleItem[]>;
-  onDeleteSale: (saleId: string) => Promise<void>;
+
+  onGetSaleItems: (
+    saleId: string
+  ) => Promise<SaleItem[]>;
+
+  onDeleteSale: (
+    saleId: string
+  ) => Promise<void>;
+
+  onNavigateToExchange: (
+    sale: Sale
+  ) => void;
 }
 
-const STORE_WHATSAPP_KEY = 'jaja_store_whatsapp_number';
+const STORE_WHATSAPP_KEY =
+  'jaja_store_whatsapp_number';
 
-// Monta o texto do relatório semanal de vendas
-const buildWeeklyReportText = (weekSales: Sale[], startDate: Date, endDate: Date) => {
+// ============================================================
+// RELATÓRIO SEMANAL
+// ============================================================
+
+const buildWeeklyReportText = (
+  weekSales: Sale[],
+  startDate: Date,
+  endDate: Date
+) => {
   const formatCurrency = (val: number) =>
-    new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
+    new Intl.NumberFormat('pt-BR', {
+      style: 'currency',
+      currency: 'BRL'
+    }).format(val);
 
-  const formatDateBR = (d: Date) => d.toLocaleDateString('pt-BR');
+  const formatDateBR = (d: Date) =>
+    d.toLocaleDateString('pt-BR');
 
-  const totalRevenue = weekSales.reduce((sum, s) => sum + Number(s.total_price), 0);
-  const totalDiscount = weekSales.reduce((sum, s) => sum + Number(s.discount || 0), 0);
-  const averageTicket = weekSales.length > 0 ? totalRevenue / weekSales.length : 0;
+  const totalRevenue = weekSales.reduce(
+    (sum, s) =>
+      sum + Number(s.total_price),
+    0
+  );
 
-  // Soma por forma de pagamento
-  const byPaymentMethod: Record<string, number> = {};
-  weekSales.forEach(s => {
-    byPaymentMethod[s.payment_method] = (byPaymentMethod[s.payment_method] || 0) + Number(s.total_price);
+  const totalDiscount = weekSales.reduce(
+    (sum, s) =>
+      sum + Number(s.discount || 0),
+    0
+  );
+
+  const averageTicket =
+    weekSales.length > 0
+      ? totalRevenue / weekSales.length
+      : 0;
+
+  const byPaymentMethod: Record<
+    string,
+    number
+  > = {};
+
+  weekSales.forEach((s) => {
+    byPaymentMethod[s.payment_method] =
+      (byPaymentMethod[s.payment_method] || 0) +
+      Number(s.total_price);
   });
 
-  let texto = `*RELATÓRIO SEMANAL DE VENDAS*\n`;
-  texto += `${formatDateBR(startDate)} a ${formatDateBR(endDate)}\n`;
+  let texto =
+    `*RELATÓRIO SEMANAL DE VENDAS*\n`;
+
+  texto += `${formatDateBR(
+    startDate
+  )} a ${formatDateBR(endDate)}\n`;
+
   texto += `-----------------------------------\n`;
+
   texto += `Total de vendas: ${weekSales.length}\n`;
-  texto += `Faturamento total: ${formatCurrency(totalRevenue)}\n`;
+
+  texto += `Faturamento total: ${formatCurrency(
+    totalRevenue
+  )}\n`;
+
   if (totalDiscount > 0) {
-    texto += `Descontos concedidos: ${formatCurrency(totalDiscount)}\n`;
+    texto += `Descontos concedidos: ${formatCurrency(
+      totalDiscount
+    )}\n`;
   }
-  texto += `Ticket médio: ${formatCurrency(averageTicket)}\n`;
+
+  texto += `Ticket médio: ${formatCurrency(
+    averageTicket
+  )}\n`;
+
   texto += `-----------------------------------\n`;
+
   texto += `*Por forma de pagamento:*\n`;
 
   Object.entries(byPaymentMethod)
     .sort((a, b) => b[1] - a[1])
     .forEach(([method, total]) => {
-      texto += `${method}: ${formatCurrency(total)}\n`;
+      texto += `${method}: ${formatCurrency(
+        total
+      )}\n`;
     });
 
   if (weekSales.length === 0) {
-    texto += `\nNenhuma venda registrada nesse período.\n`;
+    texto +=
+      `\nNenhuma venda registrada nesse período.\n`;
   }
 
-  texto += `\nRelatório gerado automaticamente pelo sistema.`;
+  texto +=
+    `\nRelatório gerado automaticamente pelo sistema.`;
 
   return texto;
 };
 
-export const MovementsView: React.FC<MovementsViewProps> = ({
+// ============================================================
+// COMPONENT
+// ============================================================
+
+export const MovementsView: React.FC<
+  MovementsViewProps
+> = ({
   movements,
   sales,
   onGetSaleItems,
-  onDeleteSale
+  onDeleteSale,
+  onNavigateToExchange
 }) => {
-  const [activeTab, setActiveTab] = useState<'movements' | 'sales'>('sales');
-  
-  // Search and filters
-  const [stockSearch, setStockSearch] = useState('');
-  const [stockTypeFilter, setStockTypeFilter] = useState('');
-  const [salesSearch, setSalesSearch] = useState('');
+  const [
+    activeTab,
+    setActiveTab
+  ] = useState<'movements' | 'sales'>(
+    'sales'
+  );
 
-  // Sale detail Modal
-  const [selectedSale, setSelectedSale] = useState<Sale | null>(null);
-  const [selectedSaleItems, setSelectedSaleItems] = useState<SaleItem[]>([]);
-  const [loadingItems, setLoadingItems] = useState(false);
+  // ==========================================================
+  // FILTROS
+  // ==========================================================
 
-  // Filtered Stock Movements
+  const [
+    stockSearch,
+    setStockSearch
+  ] = useState('');
+
+  const [
+    stockTypeFilter,
+    setStockTypeFilter
+  ] = useState('');
+
+  const [
+    salesSearch,
+    setSalesSearch
+  ] = useState('');
+
+  // ==========================================================
+  // MODAL VENDA
+  // ==========================================================
+
+  const [
+    selectedSale,
+    setSelectedSale
+  ] = useState<Sale | null>(null);
+
+  const [
+    selectedSaleItems,
+    setSelectedSaleItems
+  ] = useState<SaleItem[]>([]);
+
+  const [
+    loadingItems,
+    setLoadingItems
+  ] = useState(false);
+
+  // ==========================================================
+  // MOVIMENTAÇÕES FILTRADAS
+  // ==========================================================
+
   const filteredMovements = useMemo(() => {
-    return movements.filter(m => {
-      const prodName = m.product_name || '';
-      const matchesSearch = 
-        prodName.toLowerCase().includes(stockSearch.toLowerCase()) ||
-        (m.observation && m.observation.toLowerCase().includes(stockSearch.toLowerCase()));
-      
-      const matchesType = stockTypeFilter === '' || m.type === stockTypeFilter;
+    return movements.filter((m) => {
+      const prodName =
+        m.product_name || '';
 
-      return matchesSearch && matchesType;
+      const search =
+        stockSearch.toLowerCase();
+
+      const matchesSearch =
+        prodName
+          .toLowerCase()
+          .includes(search) ||
+        (m.observation &&
+          m.observation
+            .toLowerCase()
+            .includes(search));
+
+      const matchesType =
+        stockTypeFilter === '' ||
+        m.type === stockTypeFilter;
+
+      return (
+        matchesSearch &&
+        matchesType
+      );
     });
-  }, [movements, stockSearch, stockTypeFilter]);
+  }, [
+    movements,
+    stockSearch,
+    stockTypeFilter
+  ]);
 
-  // Filtered Sales
+  // ==========================================================
+  // VENDAS FILTRADAS
+  // ==========================================================
+
   const filteredSales = useMemo(() => {
-    return sales.filter(s => {
-      const clientName = s.customer_name || 'Consumidor Final';
-      const matchesSearch = 
-        clientName.toLowerCase().includes(salesSearch.toLowerCase()) ||
-        s.payment_method.toLowerCase().includes(salesSearch.toLowerCase()) ||
+    return sales.filter((s) => {
+      const clientName =
+        s.customer_name ||
+        'Consumidor Final';
+
+      const search =
+        salesSearch.toLowerCase();
+
+      const matchesSearch =
+        clientName
+          .toLowerCase()
+          .includes(search) ||
+        s.payment_method
+          .toLowerCase()
+          .includes(search) ||
         s.id.includes(salesSearch);
-      
+
       return matchesSearch;
     });
   }, [sales, salesSearch]);
 
-  // Open sale details
-  const handleOpenSaleDetails = async (sale: Sale) => {
+  // ==========================================================
+  // DETALHES DA VENDA
+  // ==========================================================
+
+  const handleOpenSaleDetails = async (
+    sale: Sale
+  ) => {
     setSelectedSale(sale);
     setSelectedSaleItems([]);
     setLoadingItems(true);
+
     try {
-      const items = await onGetSaleItems(sale.id);
+      const items =
+        await onGetSaleItems(
+          sale.id
+        );
+
       setSelectedSaleItems(items);
     } catch (err) {
-      console.error('Error fetching sale items:', err);
+      console.error(
+        'Error fetching sale items:',
+        err
+      );
     } finally {
       setLoadingItems(false);
     }
   };
 
-  // Settle/Delete Sale (Estorno de venda)
-  const handleDeleteSaleClick = async (sale: Sale) => {
-    if (window.confirm(`Tem certeza que deseja EXCLUIR e ESTORNAR a venda #${sale.id.substring(0, 8)}?\nIsso irá repor os produtos no estoque e estornar dívidas em aberto.`)) {
+  // ==========================================================
+  // EXCLUIR / ESTORNAR
+  // ==========================================================
+
+  const handleDeleteSaleClick =
+    async (sale: Sale) => {
+      if (
+        !window.confirm(
+          `Tem certeza que deseja EXCLUIR e ESTORNAR a venda #${sale.id.substring(
+            0,
+            8
+          )}?\nIsso irá repor os produtos no estoque e estornar dívidas em aberto.`
+        )
+      ) {
+        return;
+      }
+
       try {
         await onDeleteSale(sale.id);
-        if (selectedSale?.id === sale.id) {
+
+        if (
+          selectedSale?.id ===
+          sale.id
+        ) {
           setSelectedSale(null);
         }
       } catch (err: any) {
-        alert(err.message || 'Erro ao estornar venda.');
+        alert(
+          err?.message ||
+            'Erro ao estornar venda.'
+        );
       }
-    }
-  };
+    };
 
-  // Envia o relatório da semana (últimos 7 dias) para o WhatsApp da dona da loja
+  // ==========================================================
+  // RELATÓRIO WHATSAPP
+  // ==========================================================
+
   const handleSendWeeklyReport = () => {
     const now = new Date();
-    const startDate = new Date(now);
-    startDate.setDate(now.getDate() - 6);
-    startDate.setHours(0, 0, 0, 0);
 
-    const weekSales = sales.filter(s => new Date(s.created_at) >= startDate && new Date(s.created_at) <= now);
-    const reportText = buildWeeklyReportText(weekSales, startDate, now);
+    const startDate =
+      new Date(now);
 
-    // Recupera o número salvo, ou pede pra cadastrar na primeira vez
-    let storeNumber = localStorage.getItem(STORE_WHATSAPP_KEY) || '';
-    const inputNumber = window.prompt(
-      'Número de WhatsApp para enviar o relatório (com DDD):',
+    startDate.setDate(
+      now.getDate() - 6
+    );
+
+    startDate.setHours(
+      0,
+      0,
+      0,
+      0
+    );
+
+    const weekSales =
+      sales.filter((s) => {
+        const date =
+          new Date(s.created_at);
+
+        return (
+          date >= startDate &&
+          date <= now
+        );
+      });
+
+    const reportText =
+      buildWeeklyReportText(
+        weekSales,
+        startDate,
+        now
+      );
+
+    let storeNumber =
+      localStorage.getItem(
+        STORE_WHATSAPP_KEY
+      ) || '';
+
+    const inputNumber =
+      window.prompt(
+        'Número de WhatsApp para enviar o relatório (com DDD):',
+        storeNumber
+      );
+
+    if (
+      !inputNumber ||
+      !inputNumber.trim()
+    ) {
+      return;
+    }
+
+    storeNumber =
+      inputNumber.trim();
+
+    localStorage.setItem(
+      STORE_WHATSAPP_KEY,
       storeNumber
     );
 
-    if (!inputNumber || !inputNumber.trim()) {
-      return; // usuário cancelou
+    let telefoneLimpo =
+      storeNumber.replace(
+        /\D/g,
+        ''
+      );
+
+    if (
+      !telefoneLimpo.startsWith(
+        '55'
+      )
+    ) {
+      telefoneLimpo =
+        `55${telefoneLimpo}`;
     }
 
-    storeNumber = inputNumber.trim();
-    localStorage.setItem(STORE_WHATSAPP_KEY, storeNumber);
+    const link =
+      `https://wa.me/${telefoneLimpo}?text=${encodeURIComponent(
+        reportText
+      )}`;
 
-    let telefoneLimpo = storeNumber.replace(/\D/g, '');
-    if (!telefoneLimpo.startsWith('55')) {
-      telefoneLimpo = `55${telefoneLimpo}`;
-    }
-
-    const link = `https://wa.me/${telefoneLimpo}?text=${encodeURIComponent(reportText)}`;
-    window.open(link, '_blank');
+    window.open(
+      link,
+      '_blank'
+    );
   };
 
-  const formatCurrency = (val: number) => {
-    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
+  // ==========================================================
+  // FORMATAÇÃO
+  // ==========================================================
+
+  const formatCurrency = (
+    val: number
+  ) => {
+    return new Intl.NumberFormat(
+      'pt-BR',
+      {
+        style: 'currency',
+        currency: 'BRL'
+      }
+    ).format(val);
   };
 
-  const formatDateTime = (dateStr: string) => {
-    const d = new Date(dateStr);
-    return d.toLocaleString('pt-BR');
+  const formatDateTime = (
+    dateStr: string
+  ) => {
+    const d =
+      new Date(dateStr);
+
+    return d.toLocaleString(
+      'pt-BR'
+    );
   };
 
-  const getMovementTypeBadge = (type: StockMovement['type']) => {
-    const styles: Record<StockMovement['type'], { bg: string; text: string; icon: string }> = {
-      Entrada: { bg: 'rgba(16, 185, 129, 0.1)', text: 'var(--success)', icon: 'fa-plus' },
-      'Saída manual': { bg: 'rgba(239, 68, 68, 0.1)', text: 'var(--danger)', icon: 'fa-minus' },
-      Ajuste: { bg: 'rgba(59, 130, 246, 0.1)', text: 'var(--info)', icon: 'fa-arrows-spin' },
-      Venda: { bg: 'rgba(223, 168, 61, 0.1)', text: 'var(--primary)', icon: 'fa-cart-shopping' },
-      'Estorno de Venda': { bg: 'rgba(139, 92, 246, 0.1)', text: 'var(--accent)', icon: 'fa-rotate-left' }
+  // ==========================================================
+  // BADGE
+  // ==========================================================
+
+  const getMovementTypeBadge = (
+    type: StockMovement['type']
+  ) => {
+    const styles: Record<
+      StockMovement['type'],
+      {
+        bg: string;
+        text: string;
+        icon: string;
+      }
+    > = {
+      Entrada: {
+        bg: 'rgba(16, 185, 129, 0.1)',
+        text: 'var(--success)',
+        icon: 'fa-plus'
+      },
+
+      'Saída manual': {
+        bg: 'rgba(239, 68, 68, 0.1)',
+        text: 'var(--danger)',
+        icon: 'fa-minus'
+      },
+
+      Ajuste: {
+        bg: 'rgba(59, 130, 246, 0.1)',
+        text: 'var(--info)',
+        icon: 'fa-arrows-spin'
+      },
+
+      Venda: {
+        bg: 'rgba(223, 168, 61, 0.1)',
+        text: 'var(--primary)',
+        icon: 'fa-cart-shopping'
+      },
+
+      'Estorno de Venda': {
+        bg: 'rgba(139, 92, 246, 0.1)',
+        text: 'var(--accent)',
+        icon: 'fa-rotate-left'
+      }
     };
 
-    const s = styles[type] || { bg: 'rgba(255,255,255,0.05)', text: 'var(--text-primary)', icon: 'fa-question' };
+    const s =
+      styles[type] || {
+        bg: 'rgba(255,255,255,0.05)',
+        text: 'var(--text-primary)',
+        icon: 'fa-question'
+      };
 
     return (
-      <span className="badge" style={{ background: s.bg, color: s.text, display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '4px 8px', borderRadius: '4px', border: `1px solid ${s.text}20` }}>
-        <i className={`fa-solid ${s.icon}`} style={{ fontSize: '10px' }}></i>
+      <span
+        className="badge"
+        style={{
+          background: s.bg,
+          color: s.text,
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: '5px',
+          padding: '4px 8px',
+          borderRadius: '4px',
+          border: `1px solid ${s.text}20`
+        }}
+      >
+        <i
+          className={`fa-solid ${s.icon}`}
+          style={{
+            fontSize: '10px'
+          }}
+        />
+
         {type}
       </span>
     );
   };
 
+  // ==========================================================
+  // RENDER
+  // ==========================================================
+
   return (
-    <section id="view-vendas" className="app-view">
-      
-      {/* Tab Navigation header */}
-      <div style={{ display: 'flex', gap: '15px', borderBottom: '1px solid var(--border-color)', marginBottom: '20px' }}>
-        <button 
-          onClick={() => setActiveTab('sales')}
-          className={`nav-tab ${activeTab === 'sales' ? 'active' : ''}`}
-          style={{ 
-            background: 'none', 
-            border: 'none', 
-            color: activeTab === 'sales' ? 'var(--primary)' : 'var(--text-muted)',
-            borderBottom: activeTab === 'sales' ? '2px solid var(--primary)' : 'none',
+    <section
+      id="view-vendas"
+      className="app-view"
+    >
+      {/* ======================================================
+          TABS
+      ====================================================== */}
+
+      <div
+        style={{
+          display: 'flex',
+          gap: '15px',
+          borderBottom:
+            '1px solid var(--border-color)',
+          marginBottom: '20px'
+        }}
+      >
+        <button
+          onClick={() =>
+            setActiveTab('sales')
+          }
+          className={`nav-tab ${
+            activeTab === 'sales'
+              ? 'active'
+              : ''
+          }`}
+          style={{
+            background: 'none',
+            border: 'none',
+            color:
+              activeTab === 'sales'
+                ? 'var(--primary)'
+                : 'var(--text-muted)',
+            borderBottom:
+              activeTab === 'sales'
+                ? '2px solid var(--primary)'
+                : 'none',
             padding: '10px 15px',
             fontWeight: 600,
             cursor: 'pointer',
@@ -209,16 +548,40 @@ export const MovementsView: React.FC<MovementsViewProps> = ({
             transition: 'var(--transition)'
           }}
         >
-          <i className="fa-solid fa-basket-shopping" style={{ marginRight: '8px' }}></i> Histórico de Vendas
+          <i
+            className="fa-solid fa-basket-shopping"
+            style={{
+              marginRight: '8px'
+            }}
+          />
+
+          Histórico de Vendas
         </button>
-        <button 
-          onClick={() => setActiveTab('movements')}
-          className={`nav-tab ${activeTab === 'movements' ? 'active' : ''}`}
-          style={{ 
-            background: 'none', 
-            border: 'none', 
-            color: activeTab === 'movements' ? 'var(--primary)' : 'var(--text-muted)',
-            borderBottom: activeTab === 'movements' ? '2px solid var(--primary)' : 'none',
+
+        <button
+          onClick={() =>
+            setActiveTab(
+              'movements'
+            )
+          }
+          className={`nav-tab ${
+            activeTab === 'movements'
+              ? 'active'
+              : ''
+          }`}
+          style={{
+            background: 'none',
+            border: 'none',
+            color:
+              activeTab ===
+              'movements'
+                ? 'var(--primary)'
+                : 'var(--text-muted)',
+            borderBottom:
+              activeTab ===
+              'movements'
+                ? '2px solid var(--primary)'
+                : 'none',
             padding: '10px 15px',
             fontWeight: 600,
             cursor: 'pointer',
@@ -226,40 +589,87 @@ export const MovementsView: React.FC<MovementsViewProps> = ({
             transition: 'var(--transition)'
           }}
         >
-          <i className="fa-solid fa-right-left" style={{ marginRight: '8px' }}></i> Movimentações do Estoque
+          <i
+            className="fa-solid fa-right-left"
+            style={{
+              marginRight: '8px'
+            }}
+          />
+
+          Movimentações do Estoque
         </button>
       </div>
 
-      {/* VIEW PANEL 1: SALES TAB */}
+      {/* ======================================================
+          HISTÓRICO DE VENDAS
+      ====================================================== */}
+
       {activeTab === 'sales' && (
         <>
-          {/* Filters Bar */}
-          <div className="card" style={{ padding: '16px', marginBottom: '20px' }}>
-            <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
-              <div className="search-input-wrapper" style={{ flex: 1, minWidth: '260px', margin: 0 }}>
-                <i className="fa-solid fa-magnifying-glass"></i>
-                <input 
-                  type="text" 
-                  className="form-control" 
+          <div
+            className="card"
+            style={{
+              padding: '16px',
+              marginBottom: '20px'
+            }}
+          >
+            <div
+              style={{
+                display: 'flex',
+                gap: '12px',
+                flexWrap: 'wrap',
+                alignItems: 'center'
+              }}
+            >
+              <div
+                className="search-input-wrapper"
+                style={{
+                  flex: 1,
+                  minWidth: '260px',
+                  margin: 0
+                }}
+              >
+                <i className="fa-solid fa-magnifying-glass" />
+
+                <input
+                  type="text"
+                  className="form-control"
                   placeholder="Buscar vendas por nome do cliente, forma de pagamento ou ID da venda..."
                   value={salesSearch}
-                  onChange={(e) => setSalesSearch(e.target.value)}
+                  onChange={(e) =>
+                    setSalesSearch(
+                      e.target.value
+                    )
+                  }
                 />
               </div>
 
               <button
                 className="btn"
-                onClick={handleSendWeeklyReport}
-                style={{ background: '#25D366', color: '#fff', fontWeight: 'bold', padding: '10px 16px', whiteSpace: 'nowrap' }}
+                onClick={
+                  handleSendWeeklyReport
+                }
+                style={{
+                  background: '#25D366',
+                  color: '#fff',
+                  fontWeight: 'bold',
+                  padding: '10px 16px',
+                  whiteSpace: 'nowrap'
+                }}
                 title="Envia um resumo das vendas dos últimos 7 dias para o WhatsApp"
               >
-                <i className="fa-brands fa-whatsapp" style={{ marginRight: '8px' }}></i>
+                <i
+                  className="fa-brands fa-whatsapp"
+                  style={{
+                    marginRight: '8px'
+                  }}
+                />
+
                 Relatório da Semana
               </button>
             </div>
           </div>
 
-          {/* Sales History List */}
           <div className="card">
             <div className="table-container">
               <table className="custom-table">
@@ -269,74 +679,255 @@ export const MovementsView: React.FC<MovementsViewProps> = ({
                     <th>ID da Venda</th>
                     <th>Cliente</th>
                     <th>Método Pagamento</th>
-                    <th style={{ textAlign: 'right' }}>Desconto</th>
-                    <th style={{ textAlign: 'right' }}>Valor Total</th>
-                    <th style={{ textAlign: 'center' }}>Ações</th>
+                    <th
+                      style={{
+                        textAlign: 'right'
+                      }}
+                    >
+                      Desconto
+                    </th>
+                    <th
+                      style={{
+                        textAlign: 'right'
+                      }}
+                    >
+                      Valor Total
+                    </th>
+                    <th
+                      style={{
+                        textAlign: 'center'
+                      }}
+                    >
+                      Ações
+                    </th>
                   </tr>
                 </thead>
+
                 <tbody>
-                  {filteredSales.length === 0 ? (
+                  {filteredSales.length ===
+                  0 ? (
                     <tr>
-                      <td colSpan={7} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '50px 0' }}>
+                      <td
+                        colSpan={7}
+                        style={{
+                          textAlign:
+                            'center',
+                          color:
+                            'var(--text-muted)',
+                          padding:
+                            '50px 0'
+                        }}
+                      >
                         Nenhuma venda registrada ainda no sistema.
                       </td>
                     </tr>
                   ) : (
-                    filteredSales.map(s => (
-                      <tr key={s.id}>
-                        <td>{formatDateTime(s.created_at)}</td>
-                        <td style={{ fontFamily: 'monospace', fontSize: '12px', color: 'var(--text-secondary)' }}>
-                          #{s.id.substring(0, 8)}
-                        </td>
-                        <td>
-                          {s.customer_name || <span style={{ color: 'var(--text-muted)' }}>Consumidor Final</span>}
-                        </td>
-                        <td>
-                          <span style={{ 
-                            fontSize: '11px', 
-                            padding: '3px 8px', 
-                            background: s.payment_method === 'Boleto' ? 'var(--danger-bg)' : 'rgba(255,255,255,0.05)',
-                            color: s.payment_method === 'Boleto' ? 'var(--warning)' : 'var(--text-secondary)',
-                            borderRadius: '4px',
-                            border: '1px solid var(--border-color)',
-                            fontWeight: 500
-                          }}>
-                            {s.payment_method}{s.payment_method === 'Boleto' && s.installments ? ` ${s.installments}x` : ''}
-                          </span>
-                        </td>
-                        <td style={{ textAlign: 'right', color: 'var(--danger)' }}>
-                          {s.discount > 0 ? formatCurrency(s.discount) : '-'}
-                        </td>
-                        <td style={{ textAlign: 'right', fontWeight: 'bold', color: 'var(--primary)' }}>
-                          {formatCurrency(s.total_price)}
-                        </td>
-                        <td style={{ textAlign: 'center' }}>
-                          <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
-                            <button 
-                              className="btn btn-secondary" 
-                              onClick={() => handleOpenSaleDetails(s)}
-                              style={{ padding: '6px 10px', fontSize: '12px' }}
-                            >
-                              <i className="fa-solid fa-eye"></i> Detalhes
-                            </button>
-                            <button 
-                              className="btn" 
-                              onClick={() => handleDeleteSaleClick(s)}
-                              title="Estornar e Deletar Venda"
-                              style={{ 
-                                padding: '6px 8px', 
-                                fontSize: '12px', 
-                                background: 'var(--danger-bg)', 
-                                color: 'var(--danger)', 
-                                border: '1px solid rgba(239, 68, 68, 0.2)' 
+                    filteredSales.map(
+                      (s) => (
+                        <tr
+                          key={s.id}
+                        >
+                          <td>
+                            {formatDateTime(
+                              s.created_at
+                            )}
+                          </td>
+
+                          <td
+                            style={{
+                              fontFamily:
+                                'monospace',
+                              fontSize:
+                                '12px',
+                              color:
+                                'var(--text-secondary)'
+                            }}
+                          >
+                            #{s.id.substring(
+                              0,
+                              8
+                            )}
+                          </td>
+
+                          <td>
+                            {s.customer_name ||
+                              (
+                                <span
+                                  style={{
+                                    color:
+                                      'var(--text-muted)'
+                                  }}
+                                >
+                                  Consumidor Final
+                                </span>
+                              )}
+                          </td>
+
+                          <td>
+                            <span
+                              style={{
+                                fontSize:
+                                  '11px',
+                                padding:
+                                  '3px 8px',
+                                background:
+                                  s.payment_method ===
+                                  'Boleto'
+                                    ? 'var(--danger-bg)'
+                                    : 'rgba(255,255,255,0.05)',
+                                color:
+                                  s.payment_method ===
+                                  'Boleto'
+                                    ? 'var(--warning)'
+                                    : 'var(--text-secondary)',
+                                borderRadius:
+                                  '4px',
+                                border:
+                                  '1px solid var(--border-color)',
+                                fontWeight: 500
                               }}
                             >
-                              <i className="fa-solid fa-trash-can"></i>
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))
+                              {
+                                s.payment_method
+                              }
+
+                              {s.payment_method ===
+                                'Boleto' &&
+                              s.installments
+                                ? ` ${s.installments}x`
+                                : ''}
+                            </span>
+                          </td>
+
+                          <td
+                            style={{
+                              textAlign:
+                                'right',
+                              color:
+                                'var(--danger)'
+                            }}
+                          >
+                            {s.discount >
+                            0
+                              ? formatCurrency(
+                                  s.discount
+                                )
+                              : '-'}
+                          </td>
+
+                          <td
+                            style={{
+                              textAlign:
+                                'right',
+                              fontWeight:
+                                'bold',
+                              color:
+                                'var(--primary)'
+                            }}
+                          >
+                            {formatCurrency(
+                              s.total_price
+                            )}
+                          </td>
+
+                          {/* =================================
+                              AÇÕES
+                          ================================= */}
+
+                          <td
+                            style={{
+                              textAlign:
+                                'center'
+                            }}
+                          >
+                            <div
+                              style={{
+                                display:
+                                  'flex',
+                                gap: '6px',
+                                justifyContent:
+                                  'center',
+                                flexWrap:
+                                  'wrap'
+                              }}
+                            >
+                              {/* DETALHES */}
+
+                              <button
+                                className="btn btn-secondary"
+                                onClick={() =>
+                                  handleOpenSaleDetails(
+                                    s
+                                  )
+                                }
+                                style={{
+                                  padding:
+                                    '6px 10px',
+                                  fontSize:
+                                    '12px'
+                                }}
+                              >
+                                <i className="fa-solid fa-eye" />{' '}
+                                Detalhes
+                              </button>
+
+                              {/* TROCA */}
+
+                              <button
+                                className="btn"
+                                onClick={() =>
+                                  onNavigateToExchange(
+                                    s
+                                  )
+                                }
+                                title="Iniciar troca desta venda"
+                                style={{
+                                  padding:
+                                    '6px 10px',
+                                  fontSize:
+                                    '12px',
+                                  background:
+                                    'rgba(59, 130, 246, 0.12)',
+                                  color:
+                                    'var(--info)',
+                                  border:
+                                    '1px solid rgba(59, 130, 246, 0.25)'
+                                }}
+                              >
+                                <i className="fa-solid fa-right-left" />{' '}
+                                Trocar
+                              </button>
+
+                              {/* EXCLUIR */}
+
+                              <button
+                                className="btn"
+                                onClick={() =>
+                                  handleDeleteSaleClick(
+                                    s
+                                  )
+                                }
+                                title="Estornar e Deletar Venda"
+                                style={{
+                                  padding:
+                                    '6px 8px',
+                                  fontSize:
+                                    '12px',
+                                  background:
+                                    'var(--danger-bg)',
+                                  color:
+                                    'var(--danger)',
+                                  border:
+                                    '1px solid rgba(239, 68, 68, 0.2)'
+                                }}
+                              >
+                                <i className="fa-solid fa-trash-can" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      )
+                    )
                   )}
                 </tbody>
               </table>
@@ -345,40 +936,91 @@ export const MovementsView: React.FC<MovementsViewProps> = ({
         </>
       )}
 
-      {/* VIEW PANEL 2: RAW MOVEMENTS LOG TAB */}
-      {activeTab === 'movements' && (
+      {/* ======================================================
+          MOVIMENTAÇÕES DE ESTOQUE
+      ====================================================== */}
+
+      {activeTab ===
+        'movements' && (
         <>
-          {/* Filters Bar */}
-          <div className="card" style={{ padding: '16px', marginBottom: '20px' }}>
-            <div style={{ display: 'flex', gap: '15px', flexWrap: 'wrap' }}>
-              <div className="search-input-wrapper" style={{ flex: 1, minWidth: '260px', margin: 0 }}>
-                <i className="fa-solid fa-magnifying-glass"></i>
-                <input 
-                  type="text" 
-                  className="form-control" 
+          <div
+            className="card"
+            style={{
+              padding: '16px',
+              marginBottom: '20px'
+            }}
+          >
+            <div
+              style={{
+                display: 'flex',
+                gap: '15px',
+                flexWrap: 'wrap'
+              }}
+            >
+              <div
+                className="search-input-wrapper"
+                style={{
+                  flex: 1,
+                  minWidth: '260px',
+                  margin: 0
+                }}
+              >
+                <i className="fa-solid fa-magnifying-glass" />
+
+                <input
+                  type="text"
+                  className="form-control"
                   placeholder="Buscar logs por produto ou observação..."
                   value={stockSearch}
-                  onChange={(e) => setStockSearch(e.target.value)}
+                  onChange={(e) =>
+                    setStockSearch(
+                      e.target.value
+                    )
+                  }
                 />
               </div>
 
-              <select 
+              <select
                 className="form-control"
-                style={{ maxWidth: '180px' }}
-                value={stockTypeFilter}
-                onChange={(e) => setStockTypeFilter(e.target.value)}
+                style={{
+                  maxWidth: '180px'
+                }}
+                value={
+                  stockTypeFilter
+                }
+                onChange={(e) =>
+                  setStockTypeFilter(
+                    e.target.value
+                  )
+                }
               >
-                <option value="">Todos os Tipos</option>
-                <option value="Entrada">Entrada</option>
-                <option value="Saída manual">Saída manual</option>
-                <option value="Ajuste">Ajuste de estoque</option>
-                <option value="Venda">Venda</option>
-                <option value="Estorno de Venda">Estorno de Venda</option>
+                <option value="">
+                  Todos os Tipos
+                </option>
+
+                <option value="Entrada">
+                  Entrada
+                </option>
+
+                <option value="Saída manual">
+                  Saída manual
+                </option>
+
+                <option value="Ajuste">
+                  Ajuste de estoque
+                </option>
+
+                <option value="Venda">
+                  Venda
+                </option>
+
+                <option value="Estorno de Venda">
+                  Estorno de Venda
+                </option>
               </select>
             </div>
           </div>
 
-          {/* Movements Logs table */}
           <div className="card">
             <div className="table-container">
               <table className="custom-table">
@@ -387,31 +1029,110 @@ export const MovementsView: React.FC<MovementsViewProps> = ({
                     <th>Data / Hora</th>
                     <th>Produto</th>
                     <th>Tipo</th>
-                    <th style={{ textAlign: 'center' }}>Quantidade</th>
+                    <th
+                      style={{
+                        textAlign:
+                          'center'
+                      }}
+                    >
+                      Quantidade
+                    </th>
                     <th>Operador</th>
                     <th>Observação</th>
                   </tr>
                 </thead>
+
                 <tbody>
-                  {filteredMovements.length === 0 ? (
+                  {filteredMovements.length ===
+                  0 ? (
                     <tr>
-                      <td colSpan={6} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '50px 0' }}>
+                      <td
+                        colSpan={6}
+                        style={{
+                          textAlign:
+                            'center',
+                          color:
+                            'var(--text-muted)',
+                          padding:
+                            '50px 0'
+                        }}
+                      >
                         Nenhum registro de movimentação encontrado.
                       </td>
                     </tr>
                   ) : (
-                    filteredMovements.map(m => (
-                      <tr key={m.id}>
-                        <td>{formatDateTime(m.created_at)}</td>
-                        <td style={{ fontWeight: 600 }}>{m.product_name}</td>
-                        <td>{getMovementTypeBadge(m.type)}</td>
-                        <td style={{ textAlign: 'center', fontWeight: 'bold' }}>
-                          {m.type === 'Saída manual' || m.type === 'Venda' ? '-' : '+'}{m.quantity} un
-                        </td>
-                        <td style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>{m.user_email.split('@')[0]}</td>
-                        <td style={{ fontSize: '12px', color: 'var(--text-secondary)', maxWidth: '300px' }}>{m.observation || '-'}</td>
-                      </tr>
-                    ))
+                    filteredMovements.map(
+                      (m) => (
+                        <tr
+                          key={m.id}
+                        >
+                          <td>
+                            {formatDateTime(
+                              m.created_at
+                            )}
+                          </td>
+
+                          <td
+                            style={{
+                              fontWeight:
+                                600
+                            }}
+                          >
+                            {m.product_name}
+                          </td>
+
+                          <td>
+                            {getMovementTypeBadge(
+                              m.type
+                            )}
+                          </td>
+
+                          <td
+                            style={{
+                              textAlign:
+                                'center',
+                              fontWeight:
+                                'bold'
+                            }}
+                          >
+                            {m.type ===
+                              'Saída manual' ||
+                            m.type ===
+                              'Venda'
+                              ? '-'
+                              : '+'}
+                            {m.quantity} un
+                          </td>
+
+                          <td
+                            style={{
+                              fontSize:
+                                '11px',
+                              color:
+                                'var(--text-secondary)'
+                            }}
+                          >
+                            {m.user_email.split(
+                              '@'
+                            )[0]}
+                          </td>
+
+                          <td
+                            style={{
+                              fontSize:
+                                '12px',
+                              color:
+                                'var(--text-secondary)',
+                              maxWidth:
+                                '300px'
+                            }}
+                          >
+                            {m.observation ||
+                              '-'}
+                          </td>
+                        </tr>
+                      )
+                    )
                   )}
                 </tbody>
               </table>
@@ -420,96 +1141,471 @@ export const MovementsView: React.FC<MovementsViewProps> = ({
         </>
       )}
 
-      {/* DETAIL MODAL: SALE TRANSACTIONS */}
+      {/* ======================================================
+          MODAL DE DETALHES
+      ====================================================== */}
+
       {selectedSale && (
         <div className="modal active">
-          <div className="modal-content" style={{ maxWidth: '560px', width: '90%' }}>
+          <div
+            className="modal-content"
+            style={{
+              maxWidth: '560px',
+              width: '90%'
+            }}
+          >
             <div className="modal-header">
-              <h3>Detalhes da Venda #{selectedSale.id.substring(0, 8)}</h3>
-              <button className="modal-close-btn" onClick={() => setSelectedSale(null)}>&times;</button>
+              <h3>
+                Detalhes da Venda #
+                {selectedSale.id.substring(
+                  0,
+                  8
+                )}
+              </h3>
+
+              <button
+                className="modal-close-btn"
+                onClick={() =>
+                  setSelectedSale(null)
+                }
+              >
+                &times;
+              </button>
             </div>
-            
-            <div style={{ padding: '10px 0' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '15px', background: 'rgba(255,255,255,0.03)', padding: '12px', borderRadius: '8px', border: '1px solid var(--border-color)', fontSize: '13px' }}>
+
+            <div
+              style={{
+                padding: '10px 0'
+              }}
+            >
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns:
+                    '1fr 1fr',
+                  gap: '15px',
+                  marginBottom: '15px',
+                  background:
+                    'rgba(255,255,255,0.03)',
+                  padding: '12px',
+                  borderRadius: '8px',
+                  border:
+                    '1px solid var(--border-color)',
+                  fontSize: '13px'
+                }}
+              >
                 <div>
-                  <span style={{ color: 'var(--text-muted)', display: 'block' }}>Data / Hora:</span>
-                  <span style={{ fontWeight: 600 }}>{formatDateTime(selectedSale.created_at)}</span>
+                  <span
+                    style={{
+                      color:
+                        'var(--text-muted)',
+                      display:
+                        'block'
+                    }}
+                  >
+                    Data / Hora:
+                  </span>
+
+                  <span
+                    style={{
+                      fontWeight: 600
+                    }}
+                  >
+                    {formatDateTime(
+                      selectedSale.created_at
+                    )}
+                  </span>
                 </div>
+
                 <div>
-                  <span style={{ color: 'var(--text-muted)', display: 'block' }}>Vendedor:</span>
-                  <span style={{ fontWeight: 600 }}>{selectedSale.user_email}</span>
+                  <span
+                    style={{
+                      color:
+                        'var(--text-muted)',
+                      display:
+                        'block'
+                    }}
+                  >
+                    Vendedor:
+                  </span>
+
+                  <span
+                    style={{
+                      fontWeight: 600
+                    }}
+                  >
+                    {
+                      selectedSale.user_email
+                    }
+                  </span>
                 </div>
+
                 <div>
-                  <span style={{ color: 'var(--text-muted)', display: 'block' }}>Cliente:</span>
-                  <span style={{ fontWeight: 600 }}>{selectedSale.customer_name || 'Consumidor Final'}</span>
+                  <span
+                    style={{
+                      color:
+                        'var(--text-muted)',
+                      display:
+                        'block'
+                    }}
+                  >
+                    Cliente:
+                  </span>
+
+                  <span
+                    style={{
+                      fontWeight: 600
+                    }}
+                  >
+                    {selectedSale.customer_name ||
+                      'Consumidor Final'}
+                  </span>
                 </div>
+
                 <div>
-                  <span style={{ color: 'var(--text-muted)', display: 'block' }}>Forma de Pagamento:</span>
-                  <span style={{ fontWeight: 600, color: selectedSale.payment_method === 'Boleto' ? 'var(--warning)' : 'inherit' }}>
-                    {selectedSale.payment_method}{selectedSale.payment_method === 'Boleto' && selectedSale.installments ? ` (${selectedSale.installments}x)` : ''}
+                  <span
+                    style={{
+                      color:
+                        'var(--text-muted)',
+                      display:
+                        'block'
+                    }}
+                  >
+                    Forma de Pagamento:
+                  </span>
+
+                  <span
+                    style={{
+                      fontWeight: 600,
+                      color:
+                        selectedSale.payment_method ===
+                        'Boleto'
+                          ? 'var(--warning)'
+                          : 'inherit'
+                    }}
+                  >
+                    {
+                      selectedSale.payment_method
+                    }
+
+                    {selectedSale.payment_method ===
+                      'Boleto' &&
+                    selectedSale.installments
+                      ? ` (${selectedSale.installments}x)`
+                      : ''}
                   </span>
                 </div>
               </div>
 
-              <h4 style={{ fontSize: '14px', marginBottom: '8px', borderBottom: '1px solid var(--border-color)', paddingBottom: '4px' }}>
+              <h4
+                style={{
+                  fontSize: '14px',
+                  marginBottom: '8px',
+                  borderBottom:
+                    '1px solid var(--border-color)',
+                  paddingBottom: '4px'
+                }}
+              >
                 Itens da Compra
               </h4>
 
               {loadingItems ? (
-                <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-muted)' }}>
+                <div
+                  style={{
+                    padding: '20px',
+                    textAlign:
+                      'center',
+                    color:
+                      'var(--text-muted)'
+                  }}
+                >
                   Carregando itens...
                 </div>
               ) : (
-                <table className="custom-table" style={{ fontSize: '13px', marginBottom: '15px' }}>
+                <table
+                  className="custom-table"
+                  style={{
+                    fontSize: '13px',
+                    marginBottom: '15px'
+                  }}
+                >
                   <thead>
                     <tr>
                       <th>Produto</th>
-                      <th style={{ textAlign: 'center' }}>Qtd</th>
-                      <th style={{ textAlign: 'right' }}>Preço Unitário</th>
-                      <th style={{ textAlign: 'right' }}>Total</th>
+                      <th
+                        style={{
+                          textAlign:
+                            'center'
+                        }}
+                      >
+                        Qtd
+                      </th>
+                      <th
+                        style={{
+                          textAlign:
+                            'right'
+                        }}
+                      >
+                        Preço Unitário
+                      </th>
+                      <th
+                        style={{
+                          textAlign:
+                            'right'
+                        }}
+                      >
+                        Total
+                      </th>
                     </tr>
                   </thead>
+
                   <tbody>
-                    {selectedSaleItems.map((item, idx) => (
-                      <tr key={idx}>
-                        <td>{item.product_name}</td>
-                        <td style={{ textAlign: 'center' }}>{item.quantity} un</td>
-                        <td style={{ textAlign: 'right' }}>{formatCurrency(item.price)}</td>
-                        <td style={{ textAlign: 'right', fontWeight: 500 }}>{formatCurrency(item.price * item.quantity)}</td>
-                      </tr>
-                    ))}
+                    {selectedSaleItems.map(
+                      (
+                        item,
+                        idx
+                      ) => (
+                        <tr
+                          key={idx}
+                        >
+                          <td>
+                            {
+                              item.product_name
+                            }
+                          </td>
+
+                          <td
+                            style={{
+                              textAlign:
+                                'center'
+                            }}
+                          >
+                            {
+                              item.quantity
+                            }{' '}
+                            un
+                          </td>
+
+                          <td
+                            style={{
+                              textAlign:
+                                'right'
+                            }}
+                          >
+                            {formatCurrency(
+                              item.price
+                            )}
+                          </td>
+
+                          <td
+                            style={{
+                              textAlign:
+                                'right',
+                              fontWeight:
+                                500
+                            }}
+                          >
+                            {formatCurrency(
+                              item.price *
+                                item.quantity
+                            )}
+                          </td>
+                        </tr>
+                      )
+                    )}
                   </tbody>
                 </table>
               )}
 
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', background: 'rgba(255,255,255,0.02)', padding: '12px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', width: '220px', fontSize: '12px', color: 'var(--text-secondary)' }}>
-                  <span>Subtotal:</span>
-                  <span>{formatCurrency(Number(selectedSale.total_price) + Number(selectedSale.discount))}</span>
+              <div
+                style={{
+                  display: 'flex',
+                  flexDirection:
+                    'column',
+                  alignItems:
+                    'flex-end',
+                  background:
+                    'rgba(255,255,255,0.02)',
+                  padding: '12px',
+                  borderRadius: '8px',
+                  border:
+                    '1px solid var(--border-color)'
+                }}
+              >
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent:
+                      'space-between',
+                    width: '220px',
+                    fontSize:
+                      '12px',
+                    color:
+                      'var(--text-secondary)'
+                  }}
+                >
+                  <span>
+                    Subtotal:
+                  </span>
+
+                  <span>
+                    {formatCurrency(
+                      Number(
+                        selectedSale.total_price
+                      ) +
+                        Number(
+                          selectedSale.discount
+                        )
+                    )}
+                  </span>
                 </div>
-                {selectedSale.discount > 0 && (
-                  <div style={{ display: 'flex', justifyContent: 'space-between', width: '220px', fontSize: '12px', color: 'var(--danger)', margin: '2px 0' }}>
-                    <span>Desconto:</span>
-                    <span>-{formatCurrency(selectedSale.discount)}</span>
+
+                {selectedSale.discount >
+                  0 && (
+                  <div
+                    style={{
+                      display:
+                        'flex',
+                      justifyContent:
+                        'space-between',
+                      width: '220px',
+                      fontSize:
+                        '12px',
+                      color:
+                        'var(--danger)',
+                      margin:
+                        '2px 0'
+                    }}
+                  >
+                    <span>
+                      Desconto:
+                    </span>
+
+                    <span>
+                      -
+                      {formatCurrency(
+                        selectedSale.discount
+                      )}
+                    </span>
                   </div>
                 )}
-                <div style={{ display: 'flex', justifyContent: 'space-between', width: '220px', fontSize: '14px', fontWeight: 'bold', borderTop: '1px solid var(--border-color)', paddingTop: '4px', marginTop: '4px' }}>
-                  <span>Total Pago:</span>
-                  <span style={{ color: 'var(--primary)' }}>{formatCurrency(selectedSale.total_price)}</span>
+
+                <div
+                  style={{
+                    display:
+                      'flex',
+                    justifyContent:
+                      'space-between',
+                    width: '220px',
+                    fontSize:
+                      '14px',
+                    fontWeight:
+                      'bold',
+                    borderTop:
+                      '1px solid var(--border-color)',
+                    paddingTop:
+                      '4px',
+                    marginTop:
+                      '4px'
+                  }}
+                >
+                  <span>
+                    Total Pago:
+                  </span>
+
+                  <span
+                    style={{
+                      color:
+                        'var(--primary)'
+                    }}
+                  >
+                    {formatCurrency(
+                      selectedSale.total_price
+                    )}
+                  </span>
                 </div>
               </div>
             </div>
 
-            <div className="modal-footer" style={{ borderTop: '1px solid var(--border-color)', paddingTop: '15px', display: 'flex', justifyContent: 'space-between', gap: '10px' }}>
-              <button 
-                type="button" 
-                className="btn" 
-                style={{ background: 'var(--danger-bg)', color: 'var(--danger)', border: '1px solid rgba(239, 68, 68, 0.2)' }}
-                onClick={() => handleDeleteSaleClick(selectedSale)}
+            <div
+              className="modal-footer"
+              style={{
+                borderTop:
+                  '1px solid var(--border-color)',
+                paddingTop:
+                  '15px',
+                display: 'flex',
+                justifyContent:
+                  'space-between',
+                gap: '10px'
+              }}
+            >
+              <button
+                type="button"
+                className="btn"
+                style={{
+                  background:
+                    'var(--danger-bg)',
+                  color:
+                    'var(--danger)',
+                  border:
+                    '1px solid rgba(239, 68, 68, 0.2)'
+                }}
+                onClick={() =>
+                  handleDeleteSaleClick(
+                    selectedSale
+                  )
+                }
               >
-                <i className="fa-solid fa-trash-can" style={{ marginRight: '6px' }}></i> Excluir & Estornar
+                <i
+                  className="fa-solid fa-trash-can"
+                  style={{
+                    marginRight:
+                      '6px'
+                  }}
+                />
+
+                Excluir & Estornar
               </button>
-              <button type="button" className="btn btn-secondary" onClick={() => setSelectedSale(null)}>Fechar</button>
+
+              <div
+                style={{
+                  display: 'flex',
+                  gap: '8px'
+                }}
+              >
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => {
+                    setSelectedSale(null);
+                    onNavigateToExchange(
+                      selectedSale
+                    );
+                  }}
+                  style={{
+                    background:
+                      'rgba(59, 130, 246, 0.12)',
+                    color:
+                      'var(--info)',
+                    border:
+                      '1px solid rgba(59, 130, 246, 0.25)'
+                  }}
+                >
+                  <i className="fa-solid fa-right-left" />{' '}
+                  Trocar
+                </button>
+
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() =>
+                    setSelectedSale(null)
+                  }
+                >
+                  Fechar
+                </button>
+              </div>
             </div>
           </div>
         </div>
