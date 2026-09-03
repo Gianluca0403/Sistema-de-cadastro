@@ -569,7 +569,7 @@ const App: React.FC = () => {
         | 'Dinheiro'
     ) => {
       await dbService.payables.markAsPaid(
-        payable.id,
+        payable,
         paymentMethod,
         activeCashRegisterId
       );
