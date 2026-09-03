@@ -15,7 +15,8 @@ import {
   Sale,
   StockMovement,
   SaleItem,
-  SaleInstallment
+  SaleInstallment,
+  Payable
 } from './types';
 
 // ============================================================
@@ -33,6 +34,7 @@ import { SettingsView } from './components/SettingsView';
 import { LoginView } from './components/LoginView';
 import { ReceivablesView } from './components/ReceivablesView';
 import { ExchangeView } from './components/Exchangeview';
+import { PayablesView } from './components/Payablesview';
 
 const App: React.FC = () => {
   // ==========================================================
@@ -86,6 +88,11 @@ const App: React.FC = () => {
     installments,
     setInstallments
   ] = useState<SaleInstallment[]>([]);
+
+  const [
+    payables,
+    setPayables
+  ] = useState<Payable[]>([]);
 
   // ==========================================================
   // CAIXA
@@ -173,6 +180,24 @@ const App: React.FC = () => {
         } catch (error) {
           console.error(
             'Erro ao buscar parcelas (contas a receber):',
+            error
+          );
+        }
+
+        // ======================================================
+        // CONTAS A PAGAR
+        // ======================================================
+
+        try {
+          const payablesList =
+            await dbService.payables.getAll();
+
+          setPayables(
+            payablesList
+          );
+        } catch (error) {
+          console.error(
+            'Erro ao buscar contas a pagar:',
             error
           );
         }
@@ -508,6 +533,54 @@ const App: React.FC = () => {
         paidAmount,
         paymentMethod,
         activeCashRegisterId
+      );
+
+      await refreshAllData();
+    };
+
+  // ==========================================================
+  // CONTAS A PAGAR
+  // ==========================================================
+
+  const handleCreatePayable =
+    async (data: {
+      description: string;
+      amount: number;
+      due_date: string;
+    }) => {
+      await dbService.payables.create(
+        {
+          ...data,
+          user_email:
+            userEmail ||
+            'sistema@jaja.com'
+        }
+      );
+
+      await refreshAllData();
+    };
+
+  const handleMarkPayableAsPaid =
+    async (
+      payable: Payable,
+      paymentMethod:
+        | 'PIX'
+        | 'Cartão'
+        | 'Dinheiro'
+    ) => {
+      await dbService.payables.markAsPaid(
+        payable.id,
+        paymentMethod,
+        activeCashRegisterId
+      );
+
+      await refreshAllData();
+    };
+
+  const handleDeletePayable =
+    async (id: string) => {
+      await dbService.payables.delete(
+        id
       );
 
       await refreshAllData();
@@ -948,6 +1021,31 @@ const App: React.FC = () => {
 
               onCreateExchange={
                 handleCreateExchange
+              }
+            />
+          )}
+
+          {/* ==================================================
+              CONTAS A PAGAR
+          ================================================== */}
+
+          {currentView ===
+            'pagar' && (
+            <PayablesView
+              payables={
+                payables
+              }
+              hasOpenCashRegister={
+                !!activeCashRegisterId
+              }
+              onCreatePayable={
+                handleCreatePayable
+              }
+              onMarkAsPaid={
+                handleMarkPayableAsPaid
+              }
+              onDeletePayable={
+                handleDeletePayable
               }
             />
           )}
