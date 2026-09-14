@@ -14,10 +14,6 @@ interface MovementsViewProps {
     saleId: string
   ) => Promise<SaleItem[]>;
 
-  onDeleteSale: (
-    saleId: string
-  ) => Promise<void>;
-
   onNavigateToExchange: (
     sale: Sale
   ) => void;
@@ -130,7 +126,6 @@ export const MovementsView: React.FC<
   movements,
   sales,
   onGetSaleItems,
-  onDeleteSale,
   onNavigateToExchange
 }) => {
   const [
@@ -267,40 +262,6 @@ export const MovementsView: React.FC<
       setLoadingItems(false);
     }
   };
-
-  // ==========================================================
-  // EXCLUIR / ESTORNAR
-  // ==========================================================
-
-  const handleDeleteSaleClick =
-    async (sale: Sale) => {
-      if (
-        !window.confirm(
-          `Tem certeza que deseja EXCLUIR e ESTORNAR a venda #${sale.id.substring(
-            0,
-            8
-          )}?\nIsso irá repor os produtos no estoque e estornar dívidas em aberto.`
-        )
-      ) {
-        return;
-      }
-
-      try {
-        await onDeleteSale(sale.id);
-
-        if (
-          selectedSale?.id ===
-          sale.id
-        ) {
-          setSelectedSale(null);
-        }
-      } catch (err: any) {
-        alert(
-          err?.message ||
-            'Erro ao estornar venda.'
-        );
-      }
-    };
 
   // ==========================================================
   // RELATÓRIO WHATSAPP
@@ -898,31 +859,9 @@ export const MovementsView: React.FC<
                                 Trocar
                               </button>
 
-                              {/* EXCLUIR */}
-
-                              <button
-                                className="btn"
-                                onClick={() =>
-                                  handleDeleteSaleClick(
-                                    s
-                                  )
-                                }
-                                title="Estornar e Deletar Venda"
-                                style={{
-                                  padding:
-                                    '6px 8px',
-                                  fontSize:
-                                    '12px',
-                                  background:
-                                    'var(--danger-bg)',
-                                  color:
-                                    'var(--danger)',
-                                  border:
-                                    '1px solid rgba(239, 68, 68, 0.2)'
-                                }}
-                              >
-                                <i className="fa-solid fa-trash-can" />
-                              </button>
+                              {/* Opção de excluir/estornar removida
+                                  intencionalmente — o histórico de
+                                  vendas não deve ser apagado por aqui. */}
                             </div>
                           </td>
                         </tr>
@@ -1536,76 +1475,45 @@ export const MovementsView: React.FC<
                   '15px',
                 display: 'flex',
                 justifyContent:
-                  'space-between',
+                  'flex-end',
                 gap: '10px'
               }}
             >
+              {/* Opção de "Excluir & Estornar" removida
+                  intencionalmente — o histórico de vendas
+                  não deve ser apagado/estornado por aqui. */}
+
               <button
                 type="button"
                 className="btn"
+                onClick={() => {
+                  setSelectedSale(null);
+                  onNavigateToExchange(
+                    selectedSale
+                  );
+                }}
                 style={{
                   background:
-                    'var(--danger-bg)',
+                    'rgba(59, 130, 246, 0.12)',
                   color:
-                    'var(--danger)',
+                    'var(--info)',
                   border:
-                    '1px solid rgba(239, 68, 68, 0.2)'
+                    '1px solid rgba(59, 130, 246, 0.25)'
                 }}
-                onClick={() =>
-                  handleDeleteSaleClick(
-                    selectedSale
-                  )
-                }
               >
-                <i
-                  className="fa-solid fa-trash-can"
-                  style={{
-                    marginRight:
-                      '6px'
-                  }}
-                />
-
-                Excluir & Estornar
+                <i className="fa-solid fa-right-left" />{' '}
+                Trocar
               </button>
 
-              <div
-                style={{
-                  display: 'flex',
-                  gap: '8px'
-                }}
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() =>
+                  setSelectedSale(null)
+                }
               >
-                <button
-                  type="button"
-                  className="btn"
-                  onClick={() => {
-                    setSelectedSale(null);
-                    onNavigateToExchange(
-                      selectedSale
-                    );
-                  }}
-                  style={{
-                    background:
-                      'rgba(59, 130, 246, 0.12)',
-                    color:
-                      'var(--info)',
-                    border:
-                      '1px solid rgba(59, 130, 246, 0.25)'
-                  }}
-                >
-                  <i className="fa-solid fa-right-left" />{' '}
-                  Trocar
-                </button>
-
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  onClick={() =>
-                    setSelectedSale(null)
-                  }
-                >
-                  Fechar
-                </button>
-              </div>
+                Fechar
+              </button>
             </div>
           </div>
         </div>

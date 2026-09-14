@@ -642,19 +642,6 @@ const App: React.FC = () => {
     };
 
   // ==========================================================
-  // EXCLUIR VENDA
-  // ==========================================================
-
-  const handleDeleteSale =
-    async (saleId: string) => {
-      await dbService.sales.delete(
-        saleId
-      );
-
-      await refreshAllData();
-    };
-
-  // ==========================================================
   // NAVEGAR PARA TROCA
   // ==========================================================
 
@@ -945,9 +932,6 @@ const App: React.FC = () => {
               }
               onGetSaleItems={
                 handleGetSaleItems
-              }
-              onDeleteSale={
-                handleDeleteSale
               }
               onNavigateToExchange={
                 handleNavigateToExchange
