@@ -668,6 +668,49 @@ export const dbService = {
       }
     },
 
+    // Busca a última sessão de caixa FECHADA (ordenada pela data de fechamento,
+    // mais recente primeiro). Usada para sugerir o saldo de abertura do dia
+    // seguinte com base no que ficou em caixa no último fechamento.
+    async getLastClosedSession(): Promise<CashRegister | null> {
+      if (isSupabaseConfigured && supabase) {
+        const { data, error } = await supabase
+          .from('cash_register')
+          .select('*')
+          .eq('status', 'closed')
+          .order('closed_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (error) throw error;
+        return data as CashRegister;
+      } else {
+        const list = JSON.parse(localStorage.getItem(MOCK_KEYS.CASH_REGISTER) || '[]');
+        const closed = list.filter((c: any) => c.status === 'closed' && c.closed_at);
+        if (closed.length === 0) return null;
+        closed.sort((a: any, b: any) => b.closed_at.localeCompare(a.closed_at));
+        return closed[0];
+      }
+    },
+
+    // Lista o histórico de sessões de caixa FECHADAS, mais recente primeiro.
+    // Usado pela cliente para acompanhar os fechamentos de cada dia.
+    async getClosedSessions(limitCount: number = 60): Promise<CashRegister[]> {
+      if (isSupabaseConfigured && supabase) {
+        const { data, error } = await supabase
+          .from('cash_register')
+          .select('*')
+          .eq('status', 'closed')
+          .order('closed_at', { ascending: false })
+          .limit(limitCount);
+        if (error) throw error;
+        return (data || []) as CashRegister[];
+      } else {
+        const list = JSON.parse(localStorage.getItem(MOCK_KEYS.CASH_REGISTER) || '[]');
+        const closed = list.filter((c: any) => c.status === 'closed' && c.closed_at);
+        closed.sort((a: any, b: any) => b.closed_at.localeCompare(a.closed_at));
+        return closed.slice(0, limitCount);
+      }
+    },
+
     async openRegister(openedBy: string, balance: number): Promise<CashRegister> {
       const timestamp = new Date().toISOString();
       const payload = {
