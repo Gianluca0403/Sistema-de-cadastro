@@ -8,10 +8,12 @@ interface PDVViewProps {
   onSubmitSale: (saleData: {
     total_price: number;
     discount: number;
-    payment_method: 'PIX' | 'Cartão' | 'Dinheiro' | 'Boleto';
+    payment_method: 'PIX' | 'Cartão' | 'Dinheiro' | 'Boleto' | 'Misto';
     installments: number | null;
     due_dates?: string[] | null;
     customer_id: string | null;
+    // Preenchido quando a venda é dividida em 2 formas de pagamento
+    payments?: Array<{ method: 'PIX' | 'Cartão' | 'Dinheiro' | 'Boleto'; amount: number }>;
   }, items: Array<{
     product_id: string;
     quantity: number;
@@ -31,11 +33,38 @@ interface CartItem {
   priceType: 'retail' | 'wholesale';
 }
 
+type PayMethod = 'PIX' | 'Cartão' | 'Dinheiro' | 'Boleto';
+interface PaymentPart { method: PayMethod; amount: number }
+
+const ALL_METHODS: PayMethod[] = ['PIX', 'Cartão', 'Dinheiro', 'Boleto'];
+const MAX_INSTALLMENTS = 60;
+
+const round2 = (n: number) => Math.round((Number(n) || 0) * 100) / 100;
+
+// Soma N dias a uma data e devolve YYYY-MM-DD (usa meio-dia para evitar virar o dia por fuso horário)
+const addDaysISO = (base: Date, days: number) => {
+  const d = new Date(base);
+  d.setHours(12, 0, 0, 0);
+  d.setDate(d.getDate() + days);
+  return d.toISOString().split('T')[0];
+};
+
+// Texto do pagamento para comprovantes. Forma única: "PIX". Dividido: "PIX R$ 50.00 + Boleto 3x R$ 70.00"
+const descreverPagamentos = (payments: PaymentPart[], installments: number | null) => {
+  if (payments.length === 1) {
+    const p = payments[0];
+    return `${p.method}${p.method === 'Boleto' && installments ? ` (${installments}x)` : ''}`;
+  }
+  return payments
+    .map(p => `${p.method}${p.method === 'Boleto' && installments ? ` ${installments}x` : ''} R$ ${p.amount.toFixed(2)}`)
+    .join(' + ');
+};
+
 const gerarLinkWhatsApp = (
   cart: CartItem[],
   total: number,
   telefoneCliente: string,
-  paymentMethod: string,
+  payments: PaymentPart[],
   installments: number | null,
   dueDates: string[]
 ) => {
@@ -49,9 +78,9 @@ const gerarLinkWhatsApp = (
 
   texto += `-----------------------------------\n`;
   texto += `Total Pago: R$ ${total.toFixed(2)}\n`;
-  texto += `Pagamento: ${paymentMethod}${paymentMethod === 'Boleto' && installments ? ` (${installments}x)` : ''}\n`;
+  texto += `Pagamento: ${descreverPagamentos(payments, installments)}\n`;
 
-  if (paymentMethod === 'Boleto' && dueDates.length > 0) {
+  if (payments.some(p => p.method === 'Boleto') && dueDates.length > 0) {
     texto += `\nParcelas:\n`;
     dueDates.forEach((d, i) => {
       const [year, month, day] = d.split('-');
@@ -82,7 +111,7 @@ const formatDateBR = (isoDate: string) => {
 const imprimirComprovante = (
   cart: CartItem[],
   totals: { subtotal: number; discountValue: number; total: number },
-  paymentMethod: string,
+  payments: PaymentPart[],
   installments: number | null,
   dueDates: string[],
   cliente: Customer | undefined
@@ -102,7 +131,7 @@ const imprimirComprovante = (
       </tr>`;
   }).join('');
 
-  const parcelasHtml = paymentMethod === 'Boleto' && dueDates.length > 0
+  const parcelasHtml = payments.some(p => p.method === 'Boleto') && dueDates.length > 0
     ? `
       <div class="linha"></div>
       <div style="font-weight:bold; margin-bottom:4px;">Parcelas (${installments}x):</div>
@@ -158,7 +187,7 @@ const imprimirComprovante = (
         <div class="linha"></div>
         <div>Data: ${dataVenda}</div>
         ${cliente ? `<div>Cliente: ${cliente.name}</div>` : ''}
-        <div>Pagamento: ${paymentMethod}${paymentMethod === 'Boleto' && installments ? ` (${installments}x)` : ''}</div>
+        <div>Pagamento: ${descreverPagamentos(payments, installments)}</div>
         <div class="linha"></div>
         <table>
           <tbody>
@@ -211,8 +240,16 @@ export const PDVView: React.FC<PDVViewProps> = ({
   const [cart, setCart] = useState<CartItem[]>([]);
   const [discount, setDiscount] = useState<number>(0);
   const [discountType, setDiscountType] = useState<'fixed' | 'percent'>('fixed');
-  const [paymentMethod, setPaymentMethod] = useState<'PIX' | 'Cartão' | 'Dinheiro' | 'Boleto'>('PIX');
+  const [paymentMethod, setPaymentMethod] = useState<PayMethod>('PIX');
   const [installments, setInstallments] = useState<number>(1);
+  // Texto digitado no campo de parcelas (permite apagar e digitar sem o campo "pular")
+  const [installmentsText, setInstallmentsText] = useState<string>('1');
+
+  // Pagamento dividido em 2 formas (ex: PIX + Cartão).
+  // Forma 1 = paymentMethod + splitAmountA; Forma 2 = splitMethodB com o valor restante.
+  const [splitEnabled, setSplitEnabled] = useState(false);
+  const [splitAmountA, setSplitAmountA] = useState<number>(0);
+  const [splitMethodB, setSplitMethodB] = useState<PayMethod>('Cartão');
   const [dueDates, setDueDates] = useState<string[]>(['']);
   const [selectedClientId, setSelectedClientId] = useState<string>('');
 
@@ -227,7 +264,7 @@ export const PDVView: React.FC<PDVViewProps> = ({
   const [postSaleReceipt, setPostSaleReceipt] = useState<{
     cart: CartItem[];
     totals: { subtotal: number; discountValue: number; total: number };
-    paymentMethod: 'PIX' | 'Cartão' | 'Dinheiro' | 'Boleto';
+    payments: PaymentPart[];
     installments: number | null;
     dueDates: string[];
     cliente: Customer | undefined;
@@ -255,22 +292,49 @@ export const PDVView: React.FC<PDVViewProps> = ({
   }, [isActive]);
 
   // Ajusta o array de datas de vencimento sempre que o número de parcelas mudar
+  // Parcelas novas já nascem com data sugerida (30 dias depois da anterior) para a cliente só ajustar
   useEffect(() => {
     setDueDates(prev => {
       const updated = [...prev];
-      while (updated.length < installments) updated.push('');
+      while (updated.length < installments) {
+        const last = updated[updated.length - 1];
+        const base = last ? new Date(`${last}T12:00:00`) : new Date();
+        updated.push(addDaysISO(base, 30));
+      }
       return updated.slice(0, installments);
     });
   }, [installments]);
 
-  // Sugere datas padrão (30/60/90 dias) sempre que o usuário muda pra Boleto
+  const setInstallmentsValue = (n: number) => {
+    const safe = Math.min(Math.max(1, Math.floor(n) || 1), MAX_INSTALLMENTS);
+    setInstallments(safe);
+    setInstallmentsText(String(safe));
+  };
+
+  const handleInstallmentsInput = (value: string) => {
+    setInstallmentsText(value);
+    const n = parseInt(value, 10);
+    if (!isNaN(n) && n >= 1) {
+      const safe = Math.min(n, MAX_INSTALLMENTS);
+      setInstallments(safe);
+      if (safe !== n) setInstallmentsText(String(safe));
+    }
+  };
+
+  const handleToggleSplit = (enabled: boolean) => {
+    setSplitEnabled(enabled);
+    setSplitAmountA(0);
+    if (enabled) {
+      setSplitMethodB(ALL_METHODS.find(m => m !== paymentMethod) || 'Cartão');
+    }
+  };
+
+  // Sugere datas padrão (30, 60, 90... dias) sempre que o usuário muda pra Boleto
   const applyDefaultDueDates = () => {
     const today = new Date();
     const suggested: string[] = [];
     for (let i = 1; i <= installments; i++) {
-      const d = new Date(today);
-      d.setDate(d.getDate() + 30 * i);
-      suggested.push(d.toISOString().split('T')[0]);
+      suggested.push(addDaysISO(today, 30 * i));
     }
     setDueDates(suggested);
   };
@@ -392,6 +456,10 @@ export const PDVView: React.FC<PDVViewProps> = ({
     setSelectedClientId('');
     setPaymentMethod('PIX');
     setInstallments(1);
+    setInstallmentsText('1');
+    setSplitEnabled(false);
+    setSplitAmountA(0);
+    setSplitMethodB('Cartão');
     setDueDates(['']);
     setErrorMsg('');
   };
@@ -424,6 +492,20 @@ export const PDVView: React.FC<PDVViewProps> = ({
     };
   }, [cart, discount, discountType]);
 
+  // Partes do pagamento (1 forma, ou 2 quando "Dividir" está ligado)
+  const splitFirst = Math.min(Math.max(splitAmountA, 0), totals.total);
+  const splitRemaining = round2(totals.total - splitFirst);
+
+  const payments: PaymentPart[] = splitEnabled
+    ? [
+        { method: paymentMethod, amount: round2(splitFirst) },
+        { method: splitMethodB, amount: splitRemaining }
+      ]
+    : [{ method: paymentMethod, amount: round2(totals.total) }];
+
+  const hasBoleto = payments.some(p => p.method === 'Boleto');
+  const boletoAmount = payments.find(p => p.method === 'Boleto')?.amount || 0;
+
   // Handle Checkout Submit
   const handleCheckout = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -432,7 +514,18 @@ export const PDVView: React.FC<PDVViewProps> = ({
       return;
     }
 
-    if (paymentMethod === 'Boleto') {
+    if (splitEnabled) {
+      if (splitMethodB === paymentMethod) {
+        setErrorMsg('Escolha duas formas de pagamento diferentes.');
+        return;
+      }
+      if (splitFirst <= 0 || splitRemaining <= 0) {
+        setErrorMsg('Na divisão do pagamento, o valor da Forma 1 precisa ser maior que zero e menor que o total.');
+        return;
+      }
+    }
+
+    if (hasBoleto) {
       if (!selectedClientId) {
         setErrorMsg('Para vendas no Boleto, selecione obrigatoriamente um cliente.');
         return;
@@ -465,10 +558,11 @@ export const PDVView: React.FC<PDVViewProps> = ({
       await onSubmitSale({
         total_price: totals.total,
         discount: totals.discountValue,
-        payment_method: paymentMethod,
-        installments: paymentMethod === 'Boleto' ? installments : null,
-        due_dates: paymentMethod === 'Boleto' ? dueDates.slice(0, installments) : null,
-        customer_id: selectedClientId || null
+        payment_method: splitEnabled ? 'Misto' : paymentMethod,
+        installments: hasBoleto ? installments : null,
+        due_dates: hasBoleto ? dueDates.slice(0, installments) : null,
+        customer_id: selectedClientId || null,
+        payments: splitEnabled ? payments : undefined
       }, saleItemsPayload);
 
       showSuccessToast('Venda registrada com sucesso!');
@@ -482,18 +576,18 @@ export const PDVView: React.FC<PDVViewProps> = ({
             cart,
             totals.total,
             telefoneDoCliente,
-            paymentMethod,
-            paymentMethod === 'Boleto' ? installments : null,
-            paymentMethod === 'Boleto' ? dueDates.slice(0, installments) : []
+            payments,
+            hasBoleto ? installments : null,
+            hasBoleto ? dueDates.slice(0, installments) : []
           )
         : null;
 
       setPostSaleReceipt({
         cart: [...cart],
         totals: { ...totals },
-        paymentMethod,
-        installments: paymentMethod === 'Boleto' ? installments : null,
-        dueDates: dueDates.slice(0, installments),
+        payments: payments.map(p => ({ ...p })),
+        installments: hasBoleto ? installments : null,
+        dueDates: hasBoleto ? dueDates.slice(0, installments) : [],
         cliente,
         whatsappLink
       });
@@ -606,7 +700,7 @@ export const PDVView: React.FC<PDVViewProps> = ({
                 onClick={() => imprimirComprovante(
                   postSaleReceipt.cart,
                   postSaleReceipt.totals,
-                  postSaleReceipt.paymentMethod,
+                  postSaleReceipt.payments,
                   postSaleReceipt.installments,
                   postSaleReceipt.dueDates,
                   postSaleReceipt.cliente
@@ -1140,14 +1234,20 @@ export const PDVView: React.FC<PDVViewProps> = ({
                 </div>
 
                 <div>
-                  <label className="form-label" style={{ fontSize: '11px', marginBottom: '4px' }}>Método de Pagamento</label>
+                  <label className="form-label" style={{ fontSize: '11px', marginBottom: '4px' }}>
+                    {splitEnabled ? 'Forma 1' : 'Método de Pagamento'}
+                  </label>
                   <select
                     className="form-control"
                     style={{ padding: '6px' }}
                     value={paymentMethod}
                     onChange={(e) => {
-                      const newMethod = e.target.value as any;
+                      const newMethod = e.target.value as PayMethod;
                       setPaymentMethod(newMethod);
+                      // A Forma 2 nunca pode ser igual à Forma 1
+                      if (splitEnabled && newMethod === splitMethodB) {
+                        setSplitMethodB(ALL_METHODS.find(m => m !== newMethod) || 'Cartão');
+                      }
                       if (newMethod === 'Boleto') {
                         applyDefaultDueDates();
                       }
@@ -1161,21 +1261,102 @@ export const PDVView: React.FC<PDVViewProps> = ({
                 </div>
               </div>
 
-              {paymentMethod === 'Boleto' && (
-                <div style={{ marginBottom: '12px' }}>
-                  <label className="form-label" style={{ fontSize: '11px', marginBottom: '4px' }}>Parcelas</label>
-                  <select
-                    className="form-control"
-                    style={{ padding: '6px' }}
-                    value={installments}
-                    onChange={(e) => setInstallments(Number(e.target.value))}
-                  >
-                    <option value={1}>1x</option>
-                    <option value={2}>2x</option>
-                    <option value={3}>3x</option>
-                  </select>
+              {/* Dividir o pagamento em 2 formas (ex: PIX + Cartão) */}
+              <div style={{ marginBottom: '12px' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '11px', cursor: 'pointer', color: 'var(--text-secondary)' }}>
+                  <input
+                    type="checkbox"
+                    checked={splitEnabled}
+                    onChange={(e) => handleToggleSplit(e.target.checked)}
+                  />
+                  Dividir em 2 formas de pagamento (ex: PIX + Cartão)
+                </label>
 
-                  {/* Campos de Vencimento por Parcela */}
+                {splitEnabled && (
+                  <div style={{ marginTop: '8px', padding: '10px', border: '1px solid var(--border-color)', borderRadius: '8px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span style={{ fontSize: '12px', fontWeight: 600, minWidth: '78px' }}>{paymentMethod}</span>
+                      <input
+                        type="number"
+                        className="form-control"
+                        min="0"
+                        step="0.01"
+                        placeholder="Valor (R$)"
+                        style={{ padding: '6px', flex: 1 }}
+                        value={splitAmountA === 0 ? '' : splitAmountA}
+                        onChange={(e) => setSplitAmountA(e.target.value === '' ? 0 : Number(e.target.value))}
+                      />
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <select
+                        className="form-control"
+                        style={{ padding: '6px', width: '78px', minWidth: '78px', fontSize: '12px', fontWeight: 600 }}
+                        value={splitMethodB}
+                        onChange={(e) => {
+                          const m = e.target.value as PayMethod;
+                          setSplitMethodB(m);
+                          if (m === 'Boleto') applyDefaultDueDates();
+                        }}
+                      >
+                        {ALL_METHODS.filter(m => m !== paymentMethod).map(m => (
+                          <option key={m} value={m}>{m}</option>
+                        ))}
+                      </select>
+                      <div style={{ flex: 1, textAlign: 'right', fontWeight: 700, fontSize: '13px', color: splitRemaining > 0 ? 'var(--primary)' : 'var(--danger)' }}>
+                        {formatCurrency(splitRemaining)}
+                      </div>
+                    </div>
+
+                    <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
+                      A Forma 2 recebe automaticamente o que sobrar do total.
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              {hasBoleto && (
+                <div style={{ marginBottom: '12px' }}>
+                  <label className="form-label" style={{ fontSize: '11px', marginBottom: '4px' }}>
+                    Parcelas do Boleto{splitEnabled ? ` (${formatCurrency(boletoAmount)})` : ''}
+                  </label>
+
+                  {/* Quantidade livre de parcelas (1 a 60) + atalhos */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                    <input
+                      type="number"
+                      className="form-control"
+                      min={1}
+                      max={MAX_INSTALLMENTS}
+                      step={1}
+                      style={{ width: '72px', padding: '6px', textAlign: 'center' }}
+                      value={installmentsText}
+                      onChange={(e) => handleInstallmentsInput(e.target.value)}
+                      onBlur={() => setInstallmentsText(String(installments))}
+                    />
+                    <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>x</span>
+                    {[1, 2, 3, 6, 10, 12].map(n => (
+                      <button
+                        key={n}
+                        type="button"
+                        className="btn"
+                        style={{
+                          padding: '4px 8px',
+                          fontSize: '11px',
+                          background: installments === n ? 'var(--primary)' : 'rgba(255,255,255,0.05)',
+                          color: installments === n ? '#0b0914' : undefined
+                        }}
+                        onClick={() => setInstallmentsValue(n)}
+                      >
+                        {n}x
+                      </button>
+                    ))}
+                  </div>
+                  <span style={{ fontSize: '10px', color: 'var(--text-muted)', display: 'block', marginTop: '4px' }}>
+                    {installments}x de aproximadamente {formatCurrency(boletoAmount / installments)}
+                  </span>
+
+                  {/* Campos de Vencimento por Parcela (rola quando são muitas parcelas) */}
                   <div style={{ marginTop: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <label className="form-label" style={{ fontSize: '11px', margin: 0 }}>
@@ -1186,25 +1367,27 @@ export const PDVView: React.FC<PDVViewProps> = ({
                         onClick={applyDefaultDueDates}
                         style={{ background: 'none', border: 'none', color: 'var(--primary)', fontSize: '10px', cursor: 'pointer' }}
                       >
-                        Usar padrão (30/60/90 dias)
+                        Usar padrão (a cada 30 dias)
                       </button>
                     </div>
 
-                    {Array.from({ length: installments }).map((_, idx) => (
-                      <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <span style={{ fontSize: '11px', color: 'var(--text-muted)', minWidth: '55px' }}>
-                          Parcela {idx + 1}:
-                        </span>
-                        <input
-                          type="date"
-                          className="form-control"
-                          style={{ padding: '6px', flex: 1 }}
-                          value={dueDates[idx] || ''}
-                          onChange={(e) => updateDueDate(idx, e.target.value)}
-                          required
-                        />
-                      </div>
-                    ))}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '180px', overflowY: 'auto', paddingRight: '4px' }}>
+                      {Array.from({ length: installments }).map((_, idx) => (
+                        <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span style={{ fontSize: '11px', color: 'var(--text-muted)', minWidth: '62px' }}>
+                            Parcela {idx + 1}:
+                          </span>
+                          <input
+                            type="date"
+                            className="form-control"
+                            style={{ padding: '6px', flex: 1 }}
+                            value={dueDates[idx] || ''}
+                            onChange={(e) => updateDueDate(idx, e.target.value)}
+                            required
+                          />
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 </div>
               )}
@@ -1212,7 +1395,7 @@ export const PDVView: React.FC<PDVViewProps> = ({
               <div style={{ marginBottom: '15px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
                   <label className="form-label" style={{ fontSize: '11px', margin: 0 }}>
-                    Cliente {paymentMethod === 'Boleto' && <span style={{ color: 'var(--danger)' }}>*</span>}
+                    Cliente {hasBoleto && <span style={{ color: 'var(--danger)' }}>*</span>}
                   </label>
                   <button
                     type="button"
@@ -1253,6 +1436,12 @@ export const PDVView: React.FC<PDVViewProps> = ({
                   <span>Total a Pagar:</span>
                   <span style={{ color: 'var(--primary)' }}>{formatCurrency(totals.total)}</span>
                 </div>
+                {splitEnabled && payments.map(p => (
+                  <div key={p.method} className="summary-row" style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: 'var(--text-muted)', marginTop: '3px' }}>
+                    <span>{p.method}{p.method === 'Boleto' ? ` (${installments}x)` : ''}</span>
+                    <span>{formatCurrency(p.amount)}</span>
+                  </div>
+                ))}
               </div>
 
               <button

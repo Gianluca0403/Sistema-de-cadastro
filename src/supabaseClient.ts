@@ -14,6 +14,17 @@ export const supabase = isSupabaseConfigured
   ? createClient(supabaseUrl, supabaseAnonKey)
   : null;
 
+// Uma "parte" do pagamento de uma venda. Vendas com uma única forma de pagamento
+// não precisam disso; vendas divididas (ex: PIX + Cartão) têm uma parte por forma.
+export interface SalePayment {
+  id?: string;
+  sale_id?: string;
+  method: 'PIX' | 'Cartão' | 'Dinheiro' | 'Crediário' | 'Boleto';
+  amount: number;
+}
+
+const round2 = (n: number) => Math.round((Number(n) || 0) * 100) / 100;
+
 export const DEFAULT_CATEGORY_IMAGES = {
   Perfumes: 'https://images.unsplash.com/photo-1541643600914-78b084683601?w=400&q=80',
   Hidratantes: 'https://images.unsplash.com/photo-1608248597481-496100c80836?w=400&q=80',
@@ -32,6 +43,7 @@ const MOCK_KEYS = {
   SALES: 'jaja_sales_mock',
   SALE_ITEMS: 'jaja_sale_items_mock',
   SALE_INSTALLMENTS: 'jaja_sale_installments_mock',
+  SALE_PAYMENTS: 'jaja_sale_payments_mock',
   STOCK_MOVEMENTS: 'jaja_stock_movements_mock',
   EXCHANGES: 'jaja_exchanges_mock',
   EXCHANGE_ITEMS: 'jaja_exchange_items_mock',
@@ -915,12 +927,46 @@ export const dbService = {
     async create(
       saleData: Omit<Sale, 'id' | 'created_at'>,
       items: Array<Omit<SaleItem, 'id' | 'sale_id'>>,
-      installmentDueDates?: string[]
+      installmentDueDates?: string[],
+      payments?: Array<{ method: SalePayment['method']; amount: number }>
     ): Promise<Sale> {
       const timestamp = new Date().toISOString();
       const currentUserEmail = saleData.user_email;
-      // Garante que installments sempre tem um valor válido (default 1 para pagamentos à vista)
-      const preparedSaleData = { ...saleData, installments: saleData.installments ?? 1 };
+
+      // Partes do pagamento: se não vier nada, é uma venda com forma única (comportamento antigo).
+      const salePayments: SalePayment[] = payments && payments.length > 0
+        ? payments.map(p => ({ method: p.method, amount: round2(p.amount) }))
+        : [{ method: saleData.payment_method as SalePayment['method'], amount: round2(saleData.total_price) }];
+
+      const isSplit = salePayments.length > 1;
+
+      // Validações ANTES de gravar qualquer coisa no banco
+      const paymentsSum = round2(salePayments.reduce((sum, p) => sum + p.amount, 0));
+      if (Math.abs(paymentsSum - round2(saleData.total_price)) > 0.01) {
+        throw new Error('A soma das formas de pagamento não confere com o total da venda.');
+      }
+      if (isSplit && salePayments.some(p => p.amount <= 0)) {
+        throw new Error('Cada forma de pagamento precisa ter um valor maior que zero.');
+      }
+      if (isSplit && new Set(salePayments.map(p => p.method)).size !== salePayments.length) {
+        throw new Error('Escolha duas formas de pagamento diferentes.');
+      }
+
+      const boletoPart = salePayments.find(p => p.method === 'Boleto');
+      const deferredTotal = round2(
+        salePayments
+          .filter(p => DEFERRED_PAYMENT_METHODS.includes(p.method))
+          .reduce((sum, p) => sum + p.amount, 0)
+      );
+      const immediateParts = salePayments.filter(p => !DEFERRED_PAYMENT_METHODS.includes(p.method));
+
+      // Garante que installments sempre tem um valor válido (default 1 para pagamentos à vista).
+      // Vendas divididas ficam registradas como 'Misto' (o detalhe fica em sale_payments).
+      const preparedSaleData = {
+        ...saleData,
+        payment_method: (isSplit ? 'Misto' : salePayments[0].method) as any,
+        installments: saleData.installments ?? 1
+      };
 
       if (isSupabaseConfigured && supabase) {
         const { data: newSale, error: saleErr } = await supabase.from('sales').insert([{ ...preparedSaleData, created_at: timestamp }]).select().single();
@@ -930,6 +976,19 @@ export const dbService = {
         const preparedItems = items.map(item => ({ ...item, sale_id: saleId }));
         const { error: itemsErr } = await supabase.from('sale_items').insert(preparedItems);
         if (itemsErr) throw itemsErr;
+
+        // Vendas divididas: grava cada parte do pagamento. Se falhar, desfaz a venda
+        // para não ficar uma venda "órfã" sem o detalhe de pagamento.
+        if (isSplit) {
+          const { error: payErr } = await supabase.from('sale_payments').insert(
+            salePayments.map(p => ({ sale_id: saleId, method: p.method, amount: p.amount }))
+          );
+          if (payErr) {
+            await supabase.from('sale_items').delete().eq('sale_id', saleId);
+            await supabase.from('sales').delete().eq('id', saleId);
+            throw payErr;
+          }
+        }
 
         // Log Stock movements
         for (const item of items) {
@@ -944,26 +1003,32 @@ export const dbService = {
 
         // Gera as parcelas (contas a receber) ANTES de mexer na dívida do cliente.
         // Se o insert de parcelas falhar, a dívida não é alterada — evita inconsistência.
-        if (preparedSaleData.payment_method === 'Boleto') {
-          const plan = generateInstallmentPlan(saleId, preparedSaleData.total_price, preparedSaleData.installments || 1, new Date(timestamp), installmentDueDates);
+        if (boletoPart) {
+          const plan = generateInstallmentPlan(saleId, boletoPart.amount, preparedSaleData.installments || 1, new Date(timestamp), installmentDueDates);
           const { error: instErr } = await supabase.from('sale_installments').insert(plan);
           if (instErr) throw instErr;
         }
 
-        // Adjust customer debt if Crediário ou Boleto (dinheiro não entra na hora)
-        if (DEFERRED_PAYMENT_METHODS.includes(preparedSaleData.payment_method) && preparedSaleData.customer_id) {
-          await dbService.customers.adjustDebt(preparedSaleData.customer_id, preparedSaleData.total_price);
+        // Adjust customer debt: só a parte em Crediário/Boleto (dinheiro não entra na hora)
+        if (deferredTotal > 0 && preparedSaleData.customer_id) {
+          await dbService.customers.adjustDebt(preparedSaleData.customer_id, deferredTotal);
         }
 
-        // Adjust Cash movements apenas se for pagamento imediato (não Crediário nem Boleto)
-        if (!DEFERRED_PAYMENT_METHODS.includes(preparedSaleData.payment_method) && preparedSaleData.cash_register_id) {
-          await dbService.cash.addMovement({
-            cash_register_id: preparedSaleData.cash_register_id,
-            type: 'entrada',
-            amount: preparedSaleData.total_price,
-            description: `Venda #${saleId.substring(0, 8)}`,
-            payment_method: preparedSaleData.payment_method as any
-          });
+        // Entradas no caixa: uma por forma de pagamento imediata (PIX, Cartão, Dinheiro).
+        // A parte em Boleto/Crediário só entra no caixa quando for efetivamente paga.
+        if (preparedSaleData.cash_register_id) {
+          for (const part of immediateParts) {
+            if (part.amount <= 0) continue;
+            await dbService.cash.addMovement({
+              cash_register_id: preparedSaleData.cash_register_id,
+              type: 'entrada',
+              amount: part.amount,
+              description: isSplit
+                ? `Venda #${saleId.substring(0, 8)} (${part.method})`
+                : `Venda #${saleId.substring(0, 8)}`,
+              payment_method: part.method as any
+            });
+          }
         }
 
         return newSale as Sale;
@@ -995,6 +1060,17 @@ export const dbService = {
         localStorage.setItem(MOCK_KEYS.SALES, JSON.stringify(salesList));
         localStorage.setItem(MOCK_KEYS.SALE_ITEMS, JSON.stringify(saleItemsList));
 
+        if (isSplit) {
+          const payList = JSON.parse(localStorage.getItem(MOCK_KEYS.SALE_PAYMENTS) || '[]');
+          salePayments.forEach(p => payList.push({
+            id: 'pay-' + Math.random().toString(36).substring(2, 9),
+            sale_id: newSaleId,
+            method: p.method,
+            amount: p.amount
+          }));
+          localStorage.setItem(MOCK_KEYS.SALE_PAYMENTS, JSON.stringify(payList));
+        }
+
         // Log Stock movements
         for (const item of items) {
           await dbService.movements.create({
@@ -1008,32 +1084,58 @@ export const dbService = {
 
         // Gera as parcelas (contas a receber) ANTES de mexer na dívida do cliente.
         // Se algo falhar aqui, a dívida não é alterada — evita inconsistência.
-        if (preparedSaleData.payment_method === 'Boleto') {
-          const plan = generateInstallmentPlan(newSaleId, preparedSaleData.total_price, preparedSaleData.installments || 1, new Date(timestamp), installmentDueDates);
+        if (boletoPart) {
+          const plan = generateInstallmentPlan(newSaleId, boletoPart.amount, preparedSaleData.installments || 1, new Date(timestamp), installmentDueDates);
           const instList = JSON.parse(localStorage.getItem(MOCK_KEYS.SALE_INSTALLMENTS) || '[]');
           const newInstallments = plan.map(inst => ({ ...inst, id: 'inst-' + Math.random().toString(36).substring(2, 9) }));
           instList.push(...newInstallments);
           localStorage.setItem(MOCK_KEYS.SALE_INSTALLMENTS, JSON.stringify(instList));
         }
 
-        // Adjust Debt (Crediário ou Boleto)
-        if (DEFERRED_PAYMENT_METHODS.includes(preparedSaleData.payment_method) && preparedSaleData.customer_id) {
-          await dbService.customers.adjustDebt(preparedSaleData.customer_id, preparedSaleData.total_price);
+        // Adjust Debt: só a parte em Crediário/Boleto
+        if (deferredTotal > 0 && preparedSaleData.customer_id) {
+          await dbService.customers.adjustDebt(preparedSaleData.customer_id, deferredTotal);
         }
 
-        // Adjust Cash movements (apenas pagamento imediato)
-        if (!DEFERRED_PAYMENT_METHODS.includes(preparedSaleData.payment_method) && preparedSaleData.cash_register_id) {
-          await dbService.cash.addMovement({
-            cash_register_id: preparedSaleData.cash_register_id,
-            type: 'entrada',
-            amount: preparedSaleData.total_price,
-            description: `Venda #${newSaleId.substring(0, 8)}`,
-            payment_method: preparedSaleData.payment_method as any
-          });
+        // Entradas no caixa: uma por forma de pagamento imediata
+        if (preparedSaleData.cash_register_id) {
+          for (const part of immediateParts) {
+            if (part.amount <= 0) continue;
+            await dbService.cash.addMovement({
+              cash_register_id: preparedSaleData.cash_register_id,
+              type: 'entrada',
+              amount: part.amount,
+              description: isSplit
+                ? `Venda #${newSaleId.substring(0, 8)} (${part.method})`
+                : `Venda #${newSaleId.substring(0, 8)}`,
+              payment_method: part.method as any
+            });
+          }
         }
 
         newSale.items = newItems;
         return newSale;
+      }
+    },
+
+    // Retorna as partes do pagamento de uma venda. Para vendas com forma única
+    // (sem registros em sale_payments), devolve uma parte só com o método da venda.
+    async getPayments(saleId: string): Promise<SalePayment[]> {
+      if (isSupabaseConfigured && supabase) {
+        const { data, error } = await supabase.from('sale_payments').select('*').eq('sale_id', saleId);
+        if (!error && data && data.length > 0) return data as SalePayment[];
+
+        const { data: sale, error: saleErr } = await supabase.from('sales').select('payment_method, total_price').eq('id', saleId).single();
+        if (saleErr) throw saleErr;
+        return [{ method: sale.payment_method, amount: sale.total_price }];
+      } else {
+        const payList = JSON.parse(localStorage.getItem(MOCK_KEYS.SALE_PAYMENTS) || '[]');
+        const rows = payList.filter((p: any) => p.sale_id === saleId);
+        if (rows.length > 0) return rows;
+
+        const sales = JSON.parse(localStorage.getItem(MOCK_KEYS.SALES) || '[]');
+        const sale = sales.find((s: any) => s.id === saleId);
+        return sale ? [{ method: sale.payment_method, amount: sale.total_price }] : [];
       }
     },
 
@@ -1057,22 +1159,32 @@ export const dbService = {
           });
         }
 
-        // Debt adjustment (Crediário ou Boleto)
-        if (DEFERRED_PAYMENT_METHODS.includes(sale.payment_method) && sale.customer_id) {
-          await dbService.customers.adjustDebt(sale.customer_id, -sale.total_price);
+        // Partes do pagamento (venda dividida ou forma única)
+        const parts = await dbService.sales.getPayments(id);
+        const deferredTotal = round2(parts.filter(p => DEFERRED_PAYMENT_METHODS.includes(p.method)).reduce((sum, p) => sum + p.amount, 0));
+
+        // Debt adjustment (só a parte em Crediário ou Boleto)
+        if (deferredTotal > 0 && sale.customer_id) {
+          await dbService.customers.adjustDebt(sale.customer_id, -deferredTotal);
         }
 
-        // Cash flow removal (apenas pagamento imediato)
-        if (!DEFERRED_PAYMENT_METHODS.includes(sale.payment_method) && sale.cash_register_id) {
-          await dbService.cash.addMovement({
-            cash_register_id: sale.cash_register_id,
-            type: 'saida',
-            amount: sale.total_price,
-            description: `Estorno de Venda #${id.substring(0, 8)}`,
-            payment_method: sale.payment_method as any
-          });
+        // Cash flow removal (apenas as partes de pagamento imediato)
+        if (sale.cash_register_id) {
+          for (const part of parts.filter(p => !DEFERRED_PAYMENT_METHODS.includes(p.method))) {
+            if (part.amount <= 0) continue;
+            await dbService.cash.addMovement({
+              cash_register_id: sale.cash_register_id,
+              type: 'saida',
+              amount: part.amount,
+              description: `Estorno de Venda #${id.substring(0, 8)}`,
+              payment_method: part.method as any
+            });
+          }
         }
 
+        if (sale.payment_method === 'Misto') {
+          await supabase.from('sale_payments').delete().eq('sale_id', id);
+        }
         await supabase.from('sale_items').delete().eq('sale_id', id);
         await supabase.from('sales').delete().eq('id', id);
       } else {
@@ -1093,21 +1205,31 @@ export const dbService = {
           });
         }
 
-        // Debt adjustment (Crediário ou Boleto)
-        if (DEFERRED_PAYMENT_METHODS.includes(sale.payment_method) && sale.customer_id) {
-          await dbService.customers.adjustDebt(sale.customer_id, -sale.total_price);
+        // Partes do pagamento (venda dividida ou forma única)
+        const parts = await dbService.sales.getPayments(id);
+        const deferredTotal = round2(parts.filter(p => DEFERRED_PAYMENT_METHODS.includes(p.method)).reduce((sum, p) => sum + p.amount, 0));
+
+        // Debt adjustment (só a parte em Crediário ou Boleto)
+        if (deferredTotal > 0 && sale.customer_id) {
+          await dbService.customers.adjustDebt(sale.customer_id, -deferredTotal);
         }
 
-        // Cash flow removal (apenas pagamento imediato)
-        if (!DEFERRED_PAYMENT_METHODS.includes(sale.payment_method) && sale.cash_register_id) {
-          await dbService.cash.addMovement({
-            cash_register_id: sale.cash_register_id,
-            type: 'saida',
-            amount: sale.total_price,
-            description: `Estorno de Venda #${id.substring(0, 8)}`,
-            payment_method: sale.payment_method as any
-          });
+        // Cash flow removal (apenas as partes de pagamento imediato)
+        if (sale.cash_register_id) {
+          for (const part of parts.filter(p => !DEFERRED_PAYMENT_METHODS.includes(p.method))) {
+            if (part.amount <= 0) continue;
+            await dbService.cash.addMovement({
+              cash_register_id: sale.cash_register_id,
+              type: 'saida',
+              amount: part.amount,
+              description: `Estorno de Venda #${id.substring(0, 8)}`,
+              payment_method: part.method as any
+            });
+          }
         }
+
+        const payListAll = JSON.parse(localStorage.getItem(MOCK_KEYS.SALE_PAYMENTS) || '[]');
+        localStorage.setItem(MOCK_KEYS.SALE_PAYMENTS, JSON.stringify(payListAll.filter((p: any) => p.sale_id !== id)));
 
         localStorage.setItem(MOCK_KEYS.SALES, JSON.stringify(salesList.filter((s: any) => s.id !== id)));
 
